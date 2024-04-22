@@ -3,7 +3,6 @@ obj/
 data/
 postprocessing/__pycache__/
 final_parameters
-structures/
 runs/
 voro/
 .DS_Store
