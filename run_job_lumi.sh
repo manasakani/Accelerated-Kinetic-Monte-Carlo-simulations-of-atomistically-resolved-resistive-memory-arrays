@@ -2,14 +2,17 @@
 #SBATCH --job-name=hybrid-small     # Job name
 #SBATCH --partition=standard-g      # or just-standard-g, partition name
 #SBATCH --nodes=1                   # Total number of nodes  - 1
-#SBATCH --ntasks-per-node=8         # 8 MPI ranks per node, 8 total (1x8) - 8
-#SBATCH --gpus-per-node=8           # Allocate one gpu per MPI rank - 8
+#SBATCH --ntasks-per-node=1         # 8 MPI ranks per node, 8 total (1x8) - 8
+#SBATCH --gpus-per-node=1           # Allocate one gpu per MPI rank - 8
 #SBATCH --cpus-per-task=7           # 7 cpus per task
-#SBATCH --time=03:00:00             # Run time (d-hh:mm:ss)
+#SBATCH --time=00:05:00             # Run time (d-hh:mm:ss)
 #SBATCH --account=project_465000929
 
 # The carefully assembled compile and runtime environment (DO NOT CHANGE ORDER)...:
-module restore kmc_env                                                                      # module environment used for kmc
+# module restore kmc_env                                                                    # module environment used for kmc
+module load PrgEnv-cray/8.4.0
+module load craype-accel-amd-gfx90a
+module load rocm/5.2.3
 module load craype-x86-trento                                                               # CPU used in the LUMI-G partition
 export HIPCC_COMPILE_FLAGS_APPEND="--offload-arch=gfx90a $(CC --cray-print-opts=cflags)"    # GPU Transfer Library - allows hipcc to behave like {CC}
 export HIPCC_LINK_FLAGS_APPEND=$(CC --cray-print-opts=libs)                                 # GPU Transfer Library - allows hipcc to behave like {CC}
@@ -72,6 +75,9 @@ else
     exit 1
 fi
 
+# cd ./structures/40nm_crossbar/ 
+cd ./structures/5nm_device/ 
+
 cat << EOF > select_gpu
 #!/bin/bash
 
@@ -80,10 +86,7 @@ exec \$*
 EOF
 chmod +x ./select_gpu
 
-# cd ./structures/crossbars/40nm_3x3/ 
-cd ./structures/single_devices/timing_2.5nm/ 
-
-srun --cpu-bind=${CPU_BIND} ./select_gpu ../../../bin/runKMC parameters.txt
-
-# profile:
-# srun --cpu-bind=${CPU_BIND} ./wrapper.sh --hip-trace  ./select_gpu ../../../bin/runKMC parameters.txt
+srun --cpu-bind=${CPU_BIND} ./select_gpu ../../bin/runKMC parameters.txt
+# srun singularity exec ./try_this.sif ../../bin/runKMC parameters.txt
+# srun --mpi=pmi2 --nodes=1 singularity exec ./lumig_container.sif ../../bin/runKMC parameters.txt
+# srun --mpi=pmi2 --nodes=1 singularity exec ./mpi_enabled.sif ../../bin/runKMC parameters.txt

@@ -1,0 +1,33 @@
+bin/
+obj/
+data/
+postprocessing/__pycache__/
+final_parameters
+structures/
+runs/
+voro/
+Results_*/
+.DS_Store
+
+# Other standard ignores
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.jpg
+*.png
+*.sif
+
+# Ignore files
+output.txt
+run_job.sh
+hosts
+
+# Ignore txt files
+output*.txt
+
+# profiling with nsys
+*.qdrep
+*.nsys-rep

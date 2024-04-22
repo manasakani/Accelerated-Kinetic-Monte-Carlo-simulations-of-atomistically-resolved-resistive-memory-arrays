@@ -18,15 +18,7 @@
 #include <thrust/reduce.h>
 #include <rocprim/rocprim.hpp>
 #include <hipcub/hipcub.hpp>
-// #include <thrust/extrema.h>
-// #include <thrust/binary_search.h>
-// #include <thrust/device_ptr.h>
-// #include <thrust/scan.h>
-// #include <thrust/copy.h>
-// #include <thrust/execution_policy.h>
 #include <thrust/sequence.h>
-// #include <thrust/device_vector.h>
-// #include <thrust/fill.h>
 #include <thrust/transform.h>
 #include <hipsparse.h>
 #include <hipsolver.h>
@@ -37,14 +29,9 @@
 #include "../dist_iterative/dist_conjugate_gradient.h"
 #include "../dist_iterative/dist_spmv.h"
 
-// forward declaration of gpubuf class          
 class GPUBuffers;
 class KMCParameters;
 class Device;
-
-
-
-
 
 extern "C" {
 

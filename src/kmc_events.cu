@@ -13,20 +13,6 @@ __constant__ double E_rec_const[MAX_NUM_LAYERS];
 __constant__ double E_Vdiff_const[MAX_NUM_LAYERS];
 __constant__ double E_Odiff_const[MAX_NUM_LAYERS];
 
-// void get_gpu_info(char *gpu_string, int dev){
-//     struct hipDeviceProp_t dprop;
-//     hipError_t cudaStatus;
-
-//     cudaStatus = hipSetDevice(dev);
-//     if (cudaStatus != hipSuccess) {
-//         fprintf(stderr, "hipSetDevice failed! Error: %s\n", hipGetErrorString(cudaStatus));
-//         // Handle the error or exit the program
-//         exit(EXIT_FAILURE);
-//     }
-
-//     hipGetDeviceProperties(&dprop, dev);
-//     strcpy(gpu_string,dprop.name);
-// }
 
 void get_gpu_info(char *gpu_string, int dev) {
     hipDeviceProp_t dprop;
@@ -42,9 +28,6 @@ void get_gpu_info(char *gpu_string, int dev) {
     sprintf(gpu_string, "GPU %d", dev);
 }
 
-// void set_gpu(int dev){
-//  hipSetDevice(dev);
-// }
 
 __global__ void build_event_list(const int N, const int nn, const int *neigh_idx, 
                                  const int *layer, const double *lattice, const int pbc, 

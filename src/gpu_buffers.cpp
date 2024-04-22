@@ -59,14 +59,6 @@ void GPUBuffers::copy_power_fromGPU(std::vector<double> &power){
     power.resize(N_);
 #ifdef USE_CUDA
     gpuErrchk( hipMemcpy(power.data(), site_power, N_ * sizeof(double), hipMemcpyDeviceToHost) );
-    // hipDeviceSynchronize();
-    // std::cout << "copied\n";
-    // double psum = 0.0;
-    // for (auto p : power)
-    // {
-    //     psum += p;
-    // }
-    // std::cout << "psum*1e9: " << psum*(1e9) << "\n";
 #endif
 
 }

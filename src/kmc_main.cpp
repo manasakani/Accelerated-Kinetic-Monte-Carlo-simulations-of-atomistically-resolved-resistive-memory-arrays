@@ -157,9 +157,10 @@ int main(int argc, char **argv)
     //******************************
     // Initialize the KMC Comm
     //******************************
+
     bool split = false;
     int ratio[2] = {8, 24};
-    std::string name = "hybrid_split";
+    // std::string name = "hybrid_split";
 
     KMC_comm kmc_comm(MPI_COMM_WORLD,
         device.N - 2*p.num_atoms_first_layer,
@@ -245,9 +246,9 @@ int main(int argc, char **argv)
 
     //***********************************
     // loop over V_switch and t_switch
-    double Vd, t, kmc_time, I_macro, T_kmc, V_vcm;                                       // KMC loop variables
+    double Vd, t, kmc_time, I_macro, T_kmc, V_vcm;                                                  // KMC loop variables
     int kmc_step_count;                                                                             // tracks the number of KMC steps per bias point
-    // std::map<std::string, double> resultMap;                                                        // dictionary of output quantities which are dumped to output.log
+    // std::map<std::string, double> resultMap;                                                     // dictionary of output quantities which are dumped to output.log
     std::chrono::duration<double> diff, diff_pot, diff_power, diff_temp, diff_perturb;              // track computation time of the different modules
 
     // std::cout << "Rank: " << kmc_comm.rank_events << ", Starting simulation" << std::endl;
@@ -308,7 +309,7 @@ int main(int argc, char **argv)
         // **** Update fields and execute events on structure *****
         // ********************************************************
 
-        gpubuf.sync_HostToGPU(device);                                                                  // initialize the device attributes in gpu memory
+        gpubuf.sync_HostToGPU(device);                                                         // initialize the device attributes in gpu memory
         gpuErrchk( hipDeviceSynchronize() ); //debug
         
         // timing/benchmarking setups
@@ -323,10 +324,6 @@ int main(int argc, char **argv)
         hipDeviceSynchronize();
         MPI_Barrier(MPI_COMM_WORLD);
         auto time_start = std::chrono::high_resolution_clock::now();
-
-        // double time_pairwise_tot = 0.0;
-        // double time_K = 0.0;
-        // double time_events = 0.0;
 
         while (kmc_time < t)
         {
@@ -465,18 +462,6 @@ int main(int argc, char **argv)
             {   
                 if (kmc_comm.comm_T != MPI_COMM_NULL) {
 
-                    // double loop_G = p.high_G*10000000;                                                      // 'conductance' of the driver term for the NESS (converge to high value)
-                    // double high_G = p.high_G*100000;                                                        // 'conductance' between metallic connections
-                    // double low_G = p.low_G;  
-                    // double scale = 1e-5;
-
-                    // double G0 = 2 * 3.8612e-5 * scale;                                                      // G0 = (q^2 / h_bar), G = G0 * Tij
-                    // double tol = p.q * 0.01;                                                                // [eV] tolerance after which the barrier slope is considered
-                    // int num_source_inj = p.num_atoms_first_layer;                                           // number of injection nodes (tied to source)
-                    // int num_ground_ext = p.num_atoms_first_layer;                                           // number of extraction nodes (tied to ground)
-                    // double alpha = 1;     
-                    // std::cout << "Rank: " << kmc_comm.rank_T << ", Start T matrix" << std::endl;                                                             // [1] fraction of power dissipated as heat
-                    
                     MPI_Barrier(kmc_comm.comm_T);
                     t_current_start = MPI_Wtime();
                     update_power_gpu_sparse_dist(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact,
