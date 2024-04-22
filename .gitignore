@@ -6,7 +6,6 @@ final_parameters
 structures/
 runs/
 voro/
-Results_*/
 .DS_Store
 
 # Other standard ignores
@@ -21,12 +20,7 @@ Results_*/
 *.sif
 
 # Ignore files
-output.txt
-run_job.sh
 hosts
-
-# Ignore txt files
-output*.txt
 
 # profiling with nsys
 *.qdrep
