@@ -934,36 +934,3 @@ void denseToCSR(cusparseHandle_t handle, double* d_dense, int num_rows, int num_
     cusparseDestroyDnMat(matA);
     cusparseDestroySpMat(matB);
 }
-
-// void Assemble_X(int Natom, const double *posx, const double *posy, const double *posz,
-//                 const ELEMENT *metals, const ELEMENT *element, const int *atom_charge, const double *atom_CB_edge,
-//                 const double *lattice, bool pbc, double nn_dist, const double tol, const double Vd, const double m_e, const double V0,
-//                 const double high_G, const double low_G, const double loop_G,
-//                 int num_source_inj, int num_ground_ext, const int num_layers_contact,
-//                 int num_metals, double **X_data, int **X_row_ptr, int **X_col_indices, int *X_nnz){
-
-//     // parallelize over rows
-//     int Nfull = Natom + 2;
-//     int threads = 512;
-//     int blocks = (Nfull + threads - 1) / threads;
-
-//     // allocate the data array and initialize it to zeros
-//     gpuErrchk(cudaMalloc((void **)X_data, X_nnz[0] * sizeof(double)));
-//     gpuErrchk(cudaMemset((*X_data), 0, X_nnz[0] * sizeof(double)));
-
-//     // assemble the off-diagonal values of X
-//     populate_sparse_X_gpu<<<blocks, threads>>>(posx, posy, posz,
-//                                                metals, element, atom_charge, atom_CB_edge,
-//                                                lattice, pbc, nn_dist, tol, high_G, low_G, loop_G,
-//                                                Vd, m_e, V0,
-//                                                num_source_inj, num_ground_ext, num_layers_contact,
-//                                                num_metals, Nfull, *X_row_ptr, *X_col_indices, *X_data);
-//     gpuErrchk( cudaPeekAtLastError() );
-//     // gpuErrchk( cudaDeviceSynchronize() );
-
-//     // add the off diagonals onto the diagonal
-//     calc_diagonal_X_gpu<<<blocks, threads>>>(*X_col_indices, *X_row_ptr, *X_data, Nfull);
-//     gpuErrchk( cudaPeekAtLastError() );
-//     gpuErrchk( cudaDeviceSynchronize() );
-
-// }

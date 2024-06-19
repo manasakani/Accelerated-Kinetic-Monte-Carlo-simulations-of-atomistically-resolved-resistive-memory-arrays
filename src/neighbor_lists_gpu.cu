@@ -125,31 +125,6 @@ __global__ void populate_cutoff_idx(int *cutoff_idx, const ELEMENT *element, con
     }
 }
 
-// __global__ void populate_cutoff_dists(double *cutoff_dists, const ELEMENT *element, const double *posx, const double *posy, const double *posz,
-//                                       const double *lattice, const bool pbc, const double cutoff_radius, const int N, const int max_num_cutoff)
-// {
-//     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
-//     int num_threads_total = blockDim.x * gridDim.x;
-
-//     // each thread works on a site
-//     for (auto i = tid_total; i < N; i += num_threads_total)
-//     {
-//         int counter = 0;
-//         for (auto j = 0; j < N; j++)
-//         {
-//             double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j], lattice[0], lattice[1], lattice[2], pbc);
-//             bool in_cutoff = (dist < cutoff_radius && i != j);
-//             bool possibly_charged = (element[j] == OXYGEN_DEFECT) || (element[j] == O_EL) || (element[j] == VACANCY) || (element[j] == DEFECT);
-
-//             if (in_cutoff && possibly_charged && (counter < max_num_cutoff))
-//             {
-//                 cutoff_dists[i*max_num_cutoff + counter] = dist;
-//                 counter++;
-//             }
-//         }
-//     }
-// }
-
 
 void construct_site_neighbor_list_gpu(int *neigh_idx, int *cutoff_window, std::vector<int> &cutoff_idx,
                                       const ELEMENT *site_element, const double *posx, const double *posy, const double *posz, 
@@ -212,18 +187,6 @@ void construct_site_neighbor_list_gpu(int *neigh_idx, int *cutoff_window, std::v
     gpuErrchk( cudaDeviceSynchronize() );
 
     std::cout << "max_num_cutoff: " << max_num_cutoff << "\n";
-
-    // int* h_num_cutoff_idx = new int[N * max_num_cutoff];
-    // cudaMemcpy(h_num_cutoff_idx, d_cutoff_idx, N * max_num_cutoff * sizeof(int), cudaMemcpyDeviceToHost);
-    // for (int i = 0; i < 1; ++i)
-    // {
-    //     std::cout << "Element " << i << ": ";
-    //     for (int j = 0; j < max_num_cutoff; ++j)
-    //     {
-    //         std::cout << h_num_cutoff_idx[i * max_num_cutoff + j] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
 
     // get the neighbor lists back to host
     cudaMemcpy(neigh_idx, d_neigh_idx, N * max_num_neighbors * sizeof(int), cudaMemcpyDeviceToHost);

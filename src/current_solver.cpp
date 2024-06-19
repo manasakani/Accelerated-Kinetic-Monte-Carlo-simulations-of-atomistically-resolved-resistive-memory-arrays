@@ -25,12 +25,12 @@ std::map<std::string, double> Device::updatePower(cublasHandle_t handle, cusolve
     if (sparse_iterative_solver) 
     {
         // one sparse matrix for T:
-        // local (non distributed)
+        // *** local, uses the solver in iterative_solvers) ***
         update_power_gpu_sparse_local(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact, p.num_atoms_reservoir,
                                 Vd, pbc, high_G, low_G, loop_G, G0, tol,
                                 nn_dist, p.m_e, p.V0, p.metals.size(), &imacro, p.solve_heating_local, p.solve_heating_global, alpha);
 
-        //distributed
+        // *** distributed, uses a solver in dist_iterative ***
         // update_power_gpu_sparse(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact, p.num_atoms_reservoir,
         //                         Vd, pbc, high_G, low_G, loop_G, G0, tol,
         //                         nn_dist, p.m_e, p.V0, p.metals.size(), &imacro, p.solve_heating_local, p.solve_heating_global, alpha);
@@ -267,8 +267,6 @@ std::map<std::string, double> Device::updatePower(cublasHandle_t handle, cusolve
             I_macro += I_pos_current;
         }
 }
-
-    // debug:
     // std::cout << "Max Current: " << X[0 * N_full + 1] * (M[0] - M[1]) * 1e6 << "\n";
 
     this->imacro = I_macro;
@@ -276,9 +274,6 @@ std::map<std::string, double> Device::updatePower(cublasHandle_t handle, cusolve
     result["Current [uA]"] = I_macro * 1e6;
     result["Conductance [uS]"] = Geq * 1e6;
     std::cout << std::fixed << std::setprecision(16) << I_macro * 1e6 << "\n";
-    // std::cout << std::fixed << std::setprecision(16) << Geq * 1e6 << "\n";
-    // std::cout << "exiting after Imacro\n";
-    // exit(1);
 
 // *** Calculate the dissipated power ***
 

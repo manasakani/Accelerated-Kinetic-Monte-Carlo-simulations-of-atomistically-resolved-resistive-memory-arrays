@@ -991,53 +991,12 @@ void update_power_gpu_split(cublasHandle_t handle, cusolverDnHandle_t handle_cus
     std::chrono::duration<double> dtx4 = tx4 - tx2;
     std::cout << "total time to build the dense submatrix and populate both matrices (included): " << dtx4.count() << "\n";
 
-    // double *diagonal_inv_h = (double *)calloc(Nfull, sizeof(double));
-    // gpuErrchk( cudaMemcpy(diagonal_inv_h, diagonal_inv_d, Nfull * sizeof(double), cudaMemcpyDeviceToHost) );
-    // for (int i = 0; i < Nfull; i++){
-    //     std::cout << diagonal_inv_h[i] << " ";
-    // }   
-    // std::cout << "\n";
-    // exit(1);
-
     // the sparse matrix of the neighbor connectivity is contained in [neighbor_row_ptr_d, neighbor_col_indices_d, neighbor_data_d]
     // the dense matrix of the non-neighbor connectivity is contained in [tunnel_matrix_d] with size num_tunnel_points
     // To build the full matrix, row i and column i of tunnel_matrix_d should be added to row tunnel_indices[i] and col tunnel_indices[i] of the neighbor matrix
 
     // // output sparsity of neighbor connections
     // dump_csr_matrix_txt(submatrix_size, neighbor_nnz, neighbor_row_ptr_d, neighbor_col_indices_d, neighbor_data_d, 0);
-    // std::cout << "dumped sparse neighbor matrix\n";
-
-    // debug
-    // double *cpu_T = new double[num_tunnel_points * num_tunnel_points];
-    // cudaMemcpy(cpu_T, tunnel_matrix_d, sizeof(double) * num_tunnel_points * num_tunnel_points, cudaMemcpyDeviceToHost);
-    // std::cout << "printing tunnel matrix\n";
-    // std::ofstream fout2("T.txt");
-    // int row, col;
-    // for (row = 0; row < num_tunnel_points; row++) {
-    // for (col = 0; col < num_tunnel_points; col++) {
-    //     fout2 << cpu_T[row * num_tunnel_points + col] << ' ';
-    // }
-    // fout2 << '\n';
-    // }
-    // fout2.close(); 
-    // debug end
-
-    //debug
-    // int *check_tunnel_inds = new int[num_tunnel_points];
-    // gpuErrchk( cudaMemcpy(check_tunnel_inds, tunnel_indices, num_tunnel_points * sizeof(int), cudaMemcpyDeviceToHost) );
-    // std::cout << "printing tunnel indices\n";
-    // std::ofstream fout("insertion_indices.txt");
-    // for (int i = 0; i < num_tunnel_points; i++)
-    // {
-    //     fout << check_tunnel_inds[i] << ' ';
-    // }
-    // fout.close(); 
-    //debug end
-
-    // results of debug: checked against the full sparse assembly by reassembling the matrix in a python script 
-
-    std::cout << "matrix population is done\n";
-    // exit(1);
 
     // **************************************************************************
     // 7. Prepare the RHS vector
@@ -1079,13 +1038,9 @@ void update_power_gpu_split(cublasHandle_t handle, cusolverDnHandle_t handle_cus
                     " across the contact at VD = " << Vd << "\n";
     }
 
-    std::cout << "done system solve\n";
-    // exit(1);
-
     // auto t4 = std::chrono::steady_clock::now();
     // std::chrono::duration<double> dt3 = t4 - t3;
     // std::cout << "time to solve linear system: " << dt3.count() << "\n";
-
 
     // // ****************************************************
     // // 3. Calculate the net current flowing into the device
@@ -1434,7 +1389,6 @@ if (solve_heating_local || solve_heating_global)
     // }
     // // dump_csr_matrix_txt(gpubuf.T_distributed->rows_this_rank, gpubuf.T_distributed->nnz_per_neighbour[0], gpubuf.T_distributed->row_ptr_d[0],  gpubuf.T_distributed->col_indices_d[0], ineg_data_d[0], 5);
     // MPI_Barrier(MPI_COMM_WORLD);
-    // exit(1);
 
     // *** Compute the dissipated power at each atom with [P]_Nx1 = [I]_NxN * [V]_Nx1 (gemv --> spmv)
     double *gpu_pdisp;
@@ -1586,7 +1540,6 @@ void update_power_gpu_sparse_local(cublasHandle_t handle, cusolverDnHandle_t han
                 num_metals, &X_data, &X_row_indices, &X_row_ptr, &X_col_indices, &X_nnz);
 
     // dump_csr_matrix_txt(Nsub, X_nnz, X_row_ptr, X_col_indices, X_data, 1); 
-    // exit(1);
 
     auto t3 = std::chrono::steady_clock::now();
     std::chrono::duration<double> dt2 = t3 - t2;
@@ -2150,18 +2103,6 @@ if (solve_heating_local || solve_heating_global)
         CheckCublasError( cublasDgemv(handle, CUBLAS_OP_T, N_atom, N_atom, &alpha, gpu_ineg, N_atom, gpu_m + 2, 1, &beta, gpu_pdisp, 1) );
         cudaDeviceSynchronize();
 
-        // // copy back and print dissipated power to file
-        // double *pdisp_h = new double[N_atom];
-        // gpuErrchk( cudaMemcpy(pdisp_h, gpu_pdisp, N_atom * sizeof(double), cudaMemcpyDeviceToHost) );
-        // std::cout << "printing dissipated power\n";
-        // std::ofstream fout("pdisp_dense.txt");
-        // for (int i = 0; i < N_atom; i++)
-        // {
-        //     fout << pdisp_h[i] << "\n";
-        // }
-        // fout.close();
-        // exit(1); 
-
         // Extract the power dissipated between the contacts
         num_threads = 512;
         num_blocks = (N_atom - 1) / num_threads + 1;
@@ -2170,14 +2111,6 @@ if (solve_heating_local || solve_heating_global)
         gpuErrchk( cudaPeekAtLastError() );
         cudaDeviceSynchronize();
 
-        // double *host_pdisp = new double[N_atom];
-        // cudaMemcpy(host_pdisp, gpu_pdisp, N_atom * sizeof(double), cudaMemcpyDeviceToHost);
-        // double sum = 0.0;
-        // for (int i = 0; i < N_atom; ++i) {
-        //     sum += host_pdisp[i];
-        // }
-        // std::cout << "Sum of atom-resolved power: " << sum << std::endl;
-        // exit(1);
 } // if (solve_heating_local || solve_heating_global)
 
     cudaFree(gpu_ipiv);

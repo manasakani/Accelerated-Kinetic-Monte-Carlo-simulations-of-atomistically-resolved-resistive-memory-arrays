@@ -21,5 +21,3 @@ public:
 private:
 	std::mt19937 rng;
 };
-
-// #endif

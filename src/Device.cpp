@@ -94,30 +94,11 @@ Device::Device(std::vector<std::string> &xyz_files, KMCParameters &p)
                 N--;
             }
         }
-
-        // neighbor index used in the gpu code
-        // neigh_idx.resize(N * max_num_neighbors);
-
-        // #pragma omp parallel for
-        // for (auto i = 0; i < N; ++i) {
-        //     int nb = 0;
-        //     for (auto j: site_neighbors.l[i]) {
-        //         neigh_idx[i * max_num_neighbors + nb] = j;
-        //         nb++;
-        //     }
-        //     for (auto j = nb; j < max_num_neighbors; ++j) {
-        //         neigh_idx[i * max_num_neighbors + j] = -1;
-        //     }
-        // }
- 
     }
     // build the neighbor list on the gpu
 
     if (!mpi_rank)  std::cout << "Re-Building the neighbor list on GPU - max_num_neighbors is known!\n";
     max_num_neighbors = 52; // this should be known, if building the lists on the gpu!
-                            // 3.5 angstroms: 52
-                            // 3.0 angstrom: 28
-                            // 2.5 angstrom: 20
     
     neigh_idx.resize(N * max_num_neighbors, -1);
     cutoff_window.resize(N * 2, 0);
@@ -136,18 +117,7 @@ Device::Device(std::vector<std::string> &xyz_files, KMCParameters &p)
     site_potential_boundary.resize(N, 0);
     site_potential_charge.resize(N, 0);
     site_power.resize(N, 0);
-    site_temperature.resize(N, T_bg); // remove
-
-    // // if p.restart_temperature is false, set temperatures to T_bg (no restart)
-    // if (!p.restart_temperature)
-    // {   
-    //     std::cout << "Setting all sites to background temperature: " << T_bg << "\n";
-    //     // site_temperature.resize(N, T_bg);
-    //     for (auto T : site_temperature)
-    //     {
-    //         T = T_bg;
-    //     }
-    // }
+    site_temperature.resize(N, T_bg); 
 
     // Re-identify the atomic sites (differentiate from the vacancy sites and oxygen ions)
     updateAtomLists();
@@ -318,8 +288,6 @@ void Device::writeSnapshot(std::string filename, std::string foldername)
 
         for (int i = 0; i < N; i++)
         {
-            //fout << return_element(site_element[i]) << "   " << site_x[i] << "   " << site_y[i] << "   " << site_z[i] << "   " << site_potential_boundary[i] + site_potential_charge[i] << "   " << site_power[i] << "\n";
-            // fout << return_element(site_element[i]) << "   " << site_x[i] << "   " << site_y[i] << "   " << site_z[i] << "   " << site_potential_charge[i] << "   " << std::fixed << std::setprecision(6) << site_power[i]*1e10 << "\n";
             fout << return_element(site_element[i]) << "   " << site_x[i] << "   " << site_y[i] << "   " << site_z[i] << "   " << site_potential_charge[i] << "   " << std::fixed << std::setprecision(6) << site_power[i]*1e10 << "   " << site_temperature[i] << "\n";
         }
     }

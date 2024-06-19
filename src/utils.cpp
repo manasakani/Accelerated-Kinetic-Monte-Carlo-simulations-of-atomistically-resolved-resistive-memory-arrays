@@ -110,49 +110,6 @@ int read_xyz(std::string filename, std::vector<ELEMENT> &elements,
     return N;
 }
 
-// int read_xyz(std::string filename, std::vector<ELEMENT> &elements,
-//              std::vector<double> &x, std::vector<double> &y, std::vector<double> &z, 
-//              std::vector<double> &T, double T_bg)
-// {
-//     int N;
-//     std::string line, temp;
-//     std::ifstream xyz(filename);
-//     std::getline(xyz, line);
-//     std::istringstream iss1(line);
-//     iss1 >> N;
-//     std::getline(xyz, line);
-
-//     double x_, y_, z_, V_, p_, T_;
-//     std::string element_;
-//     for (int i = 0; i < N; i++)
-//     {
-//         getline(xyz, line);
-//         std::istringstream iss(line);
-
-//         // check length of line:
-//         if (line.length() == 4) {
-//             iss >> element_ >> x_ >> y_ >> z_;
-//             ELEMENT e = update_element(element_);
-//             elements.push_back(e);
-//             x.push_back(x_);
-//             y.push_back(y_);
-//             z.push_back(z_);
-//             T.push_back(T_bg);
-//         }
-//         if (line.length() > 4) {
-//             iss >> element_ >> x_ >> y_ >> z_ >> V_ >> p_ >> T_;
-//             ELEMENT e = update_element(element_);
-//             elements.push_back(e);
-//             x.push_back(x_);
-//             y.push_back(y_);
-//             z.push_back(z_);
-//             T.push_back(T_);
-//         }
-//     }
-//     xyz.close();
-//     return N;
-// }
-
 double site_dist(double pos1x, double pos1y, double pos1z, 
                  double pos2x, double pos2y, double pos2z, std::vector<double> lattice, bool pbc)
 {

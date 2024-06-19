@@ -550,40 +550,6 @@ std::map<std::string, double> Device::updateLocalTemperatureSteadyState(cublasHa
     return result;
 }
 
-
-//ss
-// // Compute the matrix-vector product [T_temp]_Nx1 = [laplacian_ss]_NxN * [site_power]_Nx1 - manual version
-// #pragma omp parallel for private(T_transf)
-//     for (int i = 0; i < N_center; i++)
-//     {
-//         T_transf = 0;
-        
-//         for (int j = 0; j < N_center; j++)
-//         {
-//             T_transf += laplacian_ss[i * N_center + j] * site_power[j + N_boundary_left];
-
-//         } // j
-
-//         T_temp[i] = T_transf;
-
-//     } // i
-
-// non-ss:
-// // Compute the matrix-vector product [T_temp]_Nx1 = [laplacian]_NxN * ( [site_power]_Nx1  + [T_vec]_Nx1)- manual version
-// #pragma omp parallel for private(T_transf)
-//     for (int i = 0; i < N_center; i++)
-//     {
-//         T_transf = 0;
-
-//         for (int j = 0; j < N_center; j++)
-//         {
-//             T_transf += laplacian[i * N_center + j] * ( T_vec[j + N_boundary_left] + site_power[j + N_boundary_left] );
-//         } 
-
-//         T_temp[i] = T_transf; 
-//     } 
-
-
 // used, but can repurpose for simliar tasks
 // do not use, because the laplacian (which is actually the inverse) is dense
 std::map<std::string, double> Device::updateLocalTemperature_sparse(cublasHandle_t handle, double background_temp, double t, double tau, double power_adjustment_term, double k_th_interface,

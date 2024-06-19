@@ -60,14 +60,6 @@ void GPUBuffers::copy_power_fromGPU(std::vector<double> &power){
     power.resize(N_);
 #ifdef USE_CUDA
     gpuErrchk( cudaMemcpy(power.data(), site_power, N_ * sizeof(double), cudaMemcpyDeviceToHost) );
-    // cudaDeviceSynchronize();
-    // std::cout << "copied\n";
-    // double psum = 0.0;
-    // for (auto p : power)
-    // {
-    //     psum += p;
-    // }
-    // std::cout << "psum*1e9: " << psum*(1e9) << "\n";
 #endif
 
 }
@@ -79,11 +71,6 @@ void GPUBuffers::copy_Tbg_toGPU(double new_T_bg){
 #endif
 
 }
-
-// void GPU::Buffers::copy_atom_CB_edge_toGPU(std::vector<double> &CB_edge){
-
-// }
-
 
 void GPUBuffers::copy_charge_toGPU(std::vector<int> &charge){
     charge.resize(N_);
