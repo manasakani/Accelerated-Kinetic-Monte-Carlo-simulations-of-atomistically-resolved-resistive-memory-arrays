@@ -1,12 +1,12 @@
 #include "Device.h"
 
 // update the power of each site
-std::map<std::string, double> Device::updatePower(hipblasHandle_t handle, hipsolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, KMCParameters &p, double Vd)
+std::map<std::string, double> Device::updatePower(cublasHandle_t handle, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, KMCParameters &p, double Vd)
 {
     std::map<std::string, double> result;
 
     double loop_G = p.high_G*10000000;                                                      // 'conductance' of the driver term for the NESS (converge to high value)
-    double high_G = p.high_G*100000;                                                        // 'conductance' between metallic connections
+    double high_G = p.high_G*100000;                                                    // 'conductance' between metallic connections
     double low_G = p.low_G;  
     double scale = 1e-5;
 
@@ -14,7 +14,7 @@ std::map<std::string, double> Device::updatePower(hipblasHandle_t handle, hipsol
     double tol = p.q * 0.01;                                                                // [eV] tolerance after which the barrier slope is considered
     int num_source_inj = p.num_atoms_first_layer;                                           // number of injection nodes (tied to source)
     int num_ground_ext = p.num_atoms_first_layer;                                           // number of extraction nodes (tied to ground)
-    double alpha = 1;                                                                       // [1] fraction of power dissipated as heat
+    double alpha = p.alpha[0];                                                                 // [1] fraction of power dissipated as heat in conductive regions
 
 #ifdef USE_CUDA
     auto t0 = std::chrono::steady_clock::now();
@@ -25,22 +25,21 @@ std::map<std::string, double> Device::updatePower(hipblasHandle_t handle, hipsol
     if (sparse_iterative_solver) 
     {
         // one sparse matrix for T:
-        // update_power_gpu_sparse(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact,
-        //                        Vd, pbc, high_G, low_G, loop_G, G0, tol,
-        //                        nn_dist, p.m_e, p.V0, p.metals.size(), &imacro, p.solve_heating_local, p.solve_heating_global, alpha);
+        // local (non distributed)
+        update_power_gpu_sparse_local(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact, p.num_atoms_reservoir,
+                                Vd, pbc, high_G, low_G, loop_G, G0, tol,
+                                nn_dist, p.m_e, p.V0, p.metals.size(), &imacro, p.solve_heating_local, p.solve_heating_global, alpha);
 
-        // this doesnt work unless the tunneling terms are included
-        // T seperated into a sparse neighbor matrix and a sparse tunnel matrix
-        // update_power_gpu_sparse_dist(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact,
-        //                              Vd, pbc, high_G, low_G, loop_G, G0, tol,
-        //                              nn_dist, p.m_e, p.V0, p.metals.size(), &imacro, p.solve_heating_local, p.solve_heating_global, alpha);
+        //distributed
+        // update_power_gpu_sparse(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact, p.num_atoms_reservoir,
+        //                         Vd, pbc, high_G, low_G, loop_G, G0, tol,
+        //                         nn_dist, p.m_e, p.V0, p.metals.size(), &imacro, p.solve_heating_local, p.solve_heating_global, alpha);
 
-        // split sparse-dense version calling local solver
+        // T seperated into a sparse neighbor matrix and a dense tunnel matrix
         // update_power_gpu_split(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact,
         //                        Vd, pbc, high_G, low_G, loop_G, G0, tol,
         //                        nn_dist, p.m_e, p.V0, p.metals.size(), &imacro, p.solve_heating_local, p.solve_heating_global, alpha);
     } else {
-        
         update_power_gpu(handle, handle_cusolver, gpubuf, num_source_inj, num_ground_ext, p.num_layers_contact,
                         Vd, pbc, high_G, low_G, loop_G, G0, tol,
                         nn_dist, p.m_e, p.V0, p.metals.size(), &imacro, p.solve_heating_local, p.solve_heating_global, alpha);

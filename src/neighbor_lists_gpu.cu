@@ -3,18 +3,16 @@
 //**************************************************************************
 // Initializes and populates the neighbor index lists used in the simulation
 //**************************************************************************
-// NOTE: THE CUTOFF_DISTS IS NOT BEING POPULATED DUE TO OOM AT LARGER DEVICE SIZES
 
 __global__ void populate_cutoff_window(int *cutoff_window, const double *posx, const double *posy, const double *posz,
-                                       const double cutoff_radius, const int N, const int counts, const int displ)
+                                       const double *lattice, const bool pbc, const double cutoff_radius, const int N)
 {
     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads_total = blockDim.x * gridDim.x;
 
     // each thread finds its window
-    for (int idx = tid_total; idx < counts; idx += num_threads_total)
+    for (auto i = tid_total; i < N; i += num_threads_total)
     {
-        int i = idx + displ;
         bool lower_window_found = false;
         bool upper_window_found = false;
 
@@ -22,12 +20,12 @@ __global__ void populate_cutoff_window(int *cutoff_window, const double *posx, c
         {
             if (!lower_window_found)
             {
-                double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j]);
+                double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j], lattice[0], lattice[1], lattice[2], pbc);
                 bool in_window = (dist < cutoff_radius);
 
                 if (in_window)
                 {
-                    cutoff_window[idx*2 + 0] = j; // start index of window
+                    cutoff_window[i*2 + 0] = j; // start index of window
                     lower_window_found = true;
                 }
             }
@@ -38,7 +36,7 @@ __global__ void populate_cutoff_window(int *cutoff_window, const double *posx, c
             // int j = N - j_idx;
             if (!upper_window_found)
             {
-                double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j]);
+                double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j], lattice[0], lattice[1], lattice[2], pbc);
                 bool in_window = (dist < cutoff_radius);
 
                 if (in_window)
@@ -53,24 +51,22 @@ __global__ void populate_cutoff_window(int *cutoff_window, const double *posx, c
 }
 
 __global__ void populate_neighbor_list(int *neigh_idx, const double *posx, const double *posy, const double *posz,
-                                       const double nn_dist, const int N, const int nn, const int counts, const int displ)
+                                       const double *lattice, const bool pbc, const double nn_dist, const int N, const int nn)
 {
     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads_total = blockDim.x * gridDim.x;
 
     // each thread works on a site and writes the indices of its neighbors to its row in neigh_idx
-    for (int idx = tid_total; idx < counts; idx += num_threads_total)
+    for (auto i = tid_total; i < N; i += num_threads_total)
     {
         int counter = 0;
-        int i = idx + displ;
-
-        for (int j = 0; j < N; j++)
+        for (auto j = 0; j < N; j++)
         {
-            double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j]);
+            double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j], lattice[0], lattice[1], lattice[2], pbc);
             bool neighbor = (dist < nn_dist && i != j);
             if (neighbor && counter < nn)
             {
-                neigh_idx[(size_t)idx*(size_t)nn + (size_t)counter] = j;
+                neigh_idx[i*nn + counter] = j;
                 counter++;
             }
         }
@@ -78,44 +74,39 @@ __global__ void populate_neighbor_list(int *neigh_idx, const double *posx, const
 }
 
 __global__ void getsize_cutoff_idx(int *cutoff_size, const ELEMENT *element, const double *posx, const double *posy, const double *posz,
-                                   const double cutoff_radius, const int N, const int counts, const int displ)
+                                   const double *lattice, const bool pbc, const double cutoff_radius, const int N)
 {
     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads_total = blockDim.x * gridDim.x;
 
     // each thread works on a site and writes the indices of its neighbors to its row in neigh_idx
-    for (int idx = tid_total; idx < counts; idx += num_threads_total)
+    for (auto i = tid_total; i < N; i += num_threads_total)
     {
-        int i = idx + displ;
-        cutoff_size[idx] = 0;
-
         for (auto j = 0; j < N; j++)
         {
-            double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j]);
+            double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j], lattice[0], lattice[1], lattice[2], pbc);
             bool in_cutoff = (dist < cutoff_radius && i != j);
             bool possibly_charged = (element[j] == OXYGEN_DEFECT) || (element[j] == O_EL) || (element[j] == VACANCY) || (element[j] == DEFECT);
 
             if (in_cutoff && possibly_charged)
             {
-                cutoff_size[idx]++;
+                cutoff_size[i]++;
             }
         }
     }
 }
 
-// memory access fault caused by using this
+
 __global__ void populate_cutoff_idx(int *cutoff_idx, const ELEMENT *element, const double *posx, const double *posy, const double *posz,
-                                    const double cutoff_radius, const int N, const int max_num_cutoff, const int counts, const int displ)
+                                    const double cutoff_radius, const int N, const int max_num_cutoff)
 {
     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads_total = blockDim.x * gridDim.x;
 
     // each thread works on a site and writes the indices of its neighbors to its row in neigh_idx
-    for (int idx = tid_total; idx < counts; idx += num_threads_total)
+    int counter = 0;
+    for (int i = tid_total; i < N; i += num_threads_total)
     {
-        int counter = 0;
-        int i = idx + displ;
-
         for (int j = 0; j < N; j++)
         {
             double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j]);
@@ -125,9 +116,8 @@ __global__ void populate_cutoff_idx(int *cutoff_idx, const ELEMENT *element, con
             // if (in_cutoff && possibly_charged && (counter < max_num_cutoff) && (i != j))
             if (in_cutoff && possibly_charged && (counter < max_num_cutoff) && (i != j))
             {
-                long int idx_next = (size_t)idx*(size_t)max_num_cutoff + (size_t)counter;
-
-                cutoff_idx[idx_next] = j; 
+                long int idx_next = (size_t)i*(size_t)max_num_cutoff + (size_t)counter;
+                cutoff_idx[idx_next] = j; // 10, 100, 1000 works with if ( counter == 0 )
                 counter++;
             }
         }
@@ -135,239 +125,118 @@ __global__ void populate_cutoff_idx(int *cutoff_idx, const ELEMENT *element, con
     }
 }
 
-__global__ void populate_cutoff_dists(double *cutoff_dists, const ELEMENT *element, const double *posx, const double *posy, const double *posz,
-                                      const double *lattice, const bool pbc, const double cutoff_radius, const int N, const int max_num_cutoff)
-{
-    int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
-    int num_threads_total = blockDim.x * gridDim.x;
-
-    // each thread works on a site
-    for (auto i = tid_total; i < N; i += num_threads_total)
-    {
-        int counter = 0;
-        for (auto j = 0; j < N; j++)
-        {
-            double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j], lattice[0], lattice[1], lattice[2], pbc);
-            bool in_cutoff = (dist < cutoff_radius && i != j);
-            bool possibly_charged = (element[j] == OXYGEN_DEFECT) || (element[j] == O_EL) || (element[j] == VACANCY) || (element[j] == DEFECT);
-
-            if (in_cutoff && possibly_charged && (counter < max_num_cutoff))
-            {
-                cutoff_dists[i*max_num_cutoff + counter] = dist;
-                counter++;
-            }
-        }
-    }
-}
-
-
-std::string exec1(const char* cmd) {
-    std::array<char, 128> buffer;
-    std::string result;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
-    if (!pipe) {
-        throw std::runtime_error("popen() failed!");
-    }
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe.get()) != nullptr) {
-        result += buffer.data();
-    }
-    return result;
-}
-
-
-// void compute_neighbor_lists(Device &device, GPUBuffers &gpubuf, KMCParameters &p)
+// __global__ void populate_cutoff_dists(double *cutoff_dists, const ELEMENT *element, const double *posx, const double *posy, const double *posz,
+//                                       const double *lattice, const bool pbc, const double cutoff_radius, const int N, const int max_num_cutoff)
 // {
-//     int mpi_size, mpi_rank;
-//     MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
-//     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
-//     double cutoff_radius = 20;                               // [A] interaction cutoff radius for charge contribution to potential
+//     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
+//     int num_threads_total = blockDim.x * gridDim.x;
 
-//     int N = gpubuf.N_;
-//     int max_num_neighbors = 52;
-//     double nn_dist = 3.5;
-//     int rank = gpubuf.rank;
-//     int size = gpubuf.size;
-//     int counts_this_rank = gpubuf.count_sites[rank];
-//     int displs_this_rank = gpubuf.displ_sites[rank];
-
-//     int num_threads = 1024; 
-//     int num_blocks = (counts_this_rank - 1) / num_threads + 1;
-
-//     hipMalloc((void**)&gpubuf.neigh_idx, (size_t)counts_this_rank * (size_t)max_num_neighbors *sizeof(ELEMENT));
-
-//     // *** construct site neighbor list: list of indices of the neighbors of each site
-//     gpuErrchk( hipMemset(gpubuf.neigh_idx, -1, (size_t)counts_this_rank * (size_t)max_num_neighbors * sizeof(int)) );     // unused neighbor elements are set to -1
-//     populate_neighbor_list<<<num_blocks, num_threads>>>(gpubuf.neigh_idx, gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, 
-//                                                         nn_dist, N, max_num_neighbors, counts_this_rank, displs_this_rank);
-//     gpuErrchk( hipPeekAtLastError() );
-//     gpuErrchk( hipDeviceSynchronize() );
-
-//     // // *** construct cutoff window: start-index and end-idx of other sites within the cutoff radius - BUG
-//     // populate_cutoff_window<<<num_blocks, num_threads>>>(gpubuf.cutoff_idx, gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, 
-//     //                                                     cutoff_radius, N, counts_this_rank, displs_this_rank);
-//     // gpuErrchk( hipPeekAtLastError() );
-//     // gpuErrchk( hipDeviceSynchronize() );
-
-//     // *** construct cutoff indices: list of indices of other sites within the cutoff radius
-//     int *d_num_cutoff_idx;
-//     gpuErrchk( hipMalloc((void**)&d_num_cutoff_idx, counts_this_rank * sizeof(int)) );
-//     gpuErrchk( hipMemset(d_num_cutoff_idx, 0, counts_this_rank * sizeof(int)) ); // set to zero
-
-//     getsize_cutoff_idx<<<num_blocks, num_threads>>>(d_num_cutoff_idx, gpubuf.site_element, gpubuf.site_x, gpubuf.site_y, gpubuf.site_z,
-//                                                     cutoff_radius, N, counts_this_rank, displs_this_rank);
-//     gpuErrchk( hipPeekAtLastError() );
-//     gpuErrchk( hipDeviceSynchronize() );
-    
-//     int max_num_cutoff = thrust::reduce(d_num_cutoff_idx, d_num_cutoff_idx + counts_this_rank, 0, thrust::maximum<int>());
-//     gpubuf.N_cutoff_ = max_num_cutoff;
-
-//     // print max_num_cutoff * N in gigabytes
-//     std::cout << "rank : " << rank << " memcon for cutoff_idx: " << (size_t)max_num_cutoff * (size_t)counts_this_rank * sizeof(int) / 1e9 << " GB" << std::endl;
-//     fflush(stdout);
-
-//     // print N and max_num_cutoff:
-//     std::cout << "rank : " << rank << " N: " << N << " max_num_cutoff: " << max_num_cutoff << std::endl;
-//     std::cout << (size_t)N * (size_t)max_num_cutoff << "\n";
-
-//     // int *d_cutoff_idx;
-//     gpuErrchk( hipMalloc((void**)&gpubuf.cutoff_idx, (size_t)counts_this_rank * (size_t)max_num_cutoff * sizeof(int)) );
-//     gpuErrchk( hipMemset(gpubuf.cutoff_idx, -1, (size_t)counts_this_rank * (size_t)max_num_cutoff * sizeof(int)) );     // unused neighbor elements are set to -1
-//     gpuErrchk( hipDeviceSynchronize() );
-
-//     // num_blocks = (N + num_threads - 1) / num_threads;
-//     populate_cutoff_idx<<<num_blocks, num_threads>>>(gpubuf.cutoff_idx, gpubuf.site_element, gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, cutoff_radius, N, 
-//                                                      max_num_cutoff, counts_this_rank, displs_this_rank);
-//     gpuErrchk( hipPeekAtLastError() );
-//     gpuErrchk( hipDeviceSynchronize() );
-
-//     hipFree(d_num_cutoff_idx);
-
-//     if (!rank) 
+//     // each thread works on a site
+//     for (auto i = tid_total; i < N; i += num_threads_total)
 //     {
-//         std::cout << "*********************************\n";
-//         std::cout << "MPI Rank: " << rank << std::endl;
-//         std::string rocm_smi_output = exec1("rocm-smi --showmeminfo vram");
-//         std::cout << rocm_smi_output;
-//         std::cout << "**********************************\n";
-//         fflush(stdout);
+//         int counter = 0;
+//         for (auto j = 0; j < N; j++)
+//         {
+//             double dist = site_dist_gpu(posx[i], posy[i], posz[i], posx[j], posy[j], posz[j], lattice[0], lattice[1], lattice[2], pbc);
+//             bool in_cutoff = (dist < cutoff_radius && i != j);
+//             bool possibly_charged = (element[j] == OXYGEN_DEFECT) || (element[j] == O_EL) || (element[j] == VACANCY) || (element[j] == DEFECT);
+
+//             if (in_cutoff && possibly_charged && (counter < max_num_cutoff))
+//             {
+//                 cutoff_dists[i*max_num_cutoff + counter] = dist;
+//                 counter++;
+//             }
+//         }
 //     }
-//     MPI_Barrier(MPI_COMM_WORLD);
 // }
 
-void compute_neighbor_list(MPI_Comm &event_comm, int *counts, int *displ, Device &device, GPUBuffers &gpubuf, KMCParameters &p)
+
+void construct_site_neighbor_list_gpu(int *neigh_idx, int *cutoff_window, std::vector<int> &cutoff_idx,
+                                      const ELEMENT *site_element, const double *posx, const double *posy, const double *posz, 
+                                      const double *lattice, const bool pbc, double nn_dist, double cutoff_radius, int N, int max_num_neighbors)
 {
-    int size, rank;
-    MPI_Comm_size(event_comm, &size);
-    MPI_Comm_rank(event_comm, &rank);
-    double cutoff_radius = 20;                               // [A] interaction cutoff radius for charge contribution to potential
 
-    int N = gpubuf.N_;
-    int max_num_neighbors = 52;
-    double nn_dist = 3.5;
-    int counts_this_rank = counts[rank];
-    int displs_this_rank = displ[rank];
+    double *d_posx, *d_posy, *d_posz, *d_lattice;
+    int *d_neigh_idx, *d_cutoff_window;
+    ELEMENT *d_element;
 
-    hipMalloc((void**)&gpubuf.neigh_idx, (size_t)counts_this_rank * (size_t)max_num_neighbors *sizeof(ELEMENT));
+    int num_threads = 1024;
+    int num_blocks = (N - 1) / num_threads + 1;
+
+    // Allocate and copy input arrays 
+    gpuErrchk( cudaMalloc((void**)&d_element, N * sizeof(ELEMENT)) );
+    gpuErrchk( cudaMalloc((void**)&d_posx, N * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void**)&d_posy, N * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void**)&d_posz, N * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void**)&d_lattice, 3 * sizeof(double)) ); 
+    gpuErrchk( cudaMalloc((void**)&d_neigh_idx, N * max_num_neighbors * sizeof(int)) );
+    gpuErrchk( cudaMalloc((void**)&d_cutoff_window, N * 2 * sizeof(int)) );
+    gpuErrchk( cudaMemcpy(d_element, site_element, N * sizeof(ELEMENT), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(d_neigh_idx, neigh_idx, N * max_num_neighbors * sizeof(int), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(d_cutoff_window, cutoff_window, N * 2 * sizeof(int), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(d_posx, posx, N * sizeof(double), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(d_posy, posy, N * sizeof(double), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(d_posz, posz, N * sizeof(double), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(d_lattice, lattice, 3 * sizeof(double), cudaMemcpyHostToDevice) ); 
+
+    // int num_threads = 512;
 
     // *** construct site neighbor list: list of indices of the neighbors of each site
-    int num_threads = 1024; 
-    int num_blocks = (counts_this_rank - 1) / num_threads + 1;
-    gpuErrchk( hipMemset(gpubuf.neigh_idx, -1, (size_t)counts_this_rank * (size_t)max_num_neighbors * sizeof(int)) );     // unused neighbor elements are set to -1
-    populate_neighbor_list<<<num_blocks, num_threads>>>(gpubuf.neigh_idx, gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, 
-                                                        nn_dist, N, max_num_neighbors, counts_this_rank, displs_this_rank);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    populate_neighbor_list<<<num_blocks, num_threads>>>(d_neigh_idx, d_posx, d_posy, d_posz, d_lattice, pbc, nn_dist, N, max_num_neighbors);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
-    if (!rank) 
-    {
-        std::cout << "*********************************\n";
-        std::cout << "MPI Rank: " << rank << std::endl;
-        std::string rocm_smi_output = exec1("rocm-smi --showmeminfo vram");
-        std::cout << rocm_smi_output;
-        std::cout << "**********************************\n";
-        fflush(stdout);
-    }
-}
-
-
-void compute_cutoff_list(MPI_Comm &pairwise_comm, int *counts, int *displ, Device &device, GPUBuffers &gpubuf, KMCParameters &p)
-{
-    int size, rank;
-    MPI_Comm_size(pairwise_comm, &size);
-    MPI_Comm_rank(pairwise_comm, &rank);
-    double cutoff_radius = 20;                               // [A] interaction cutoff radius for charge contribution to potential
-
-    int N = gpubuf.N_;
-    int max_num_neighbors = 52;
-    double nn_dist = 3.5;
-    int counts_this_rank = counts[rank];
-    int displs_this_rank = displ[rank];
-
-    int num_threads = 1024; 
-    int num_blocks = (counts_this_rank - 1) / num_threads + 1;
-
-    // print counts_this_rank and displs_this_rank
-    std::cout << "rank : " << rank << " counts_this_rank: " << counts_this_rank << " displs_this_rank: " << displs_this_rank << std::endl;
+    // *** construct cutoff window: start-index and end-idx of other sites within the cutoff radius
+    populate_cutoff_window<<<num_blocks, num_threads>>>(d_cutoff_window, d_posx, d_posy, d_posz, d_lattice, pbc, cutoff_radius, N);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     // *** construct cutoff indices: list of indices of other sites within the cutoff radius
     int *d_num_cutoff_idx;
-    gpuErrchk( hipMalloc((void**)&d_num_cutoff_idx, counts_this_rank * sizeof(int)) );
-    gpuErrchk( hipMemset(d_num_cutoff_idx, 0, counts_this_rank * sizeof(int)) ); // set to zero
+    cudaMalloc((void**)&d_num_cutoff_idx, N * sizeof(int));
 
-    getsize_cutoff_idx<<<num_blocks, num_threads>>>(d_num_cutoff_idx, gpubuf.site_element, gpubuf.site_x, gpubuf.site_y, gpubuf.site_z,
-                                                    cutoff_radius, N, counts_this_rank, displs_this_rank);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    getsize_cutoff_idx<<<num_blocks, num_threads>>>(d_num_cutoff_idx, d_element, d_posx, d_posy, d_posz, d_lattice, pbc, cutoff_radius, N);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
-    // std::cout << "cutoff rad: " << cutoff_radius << std::endl;
-    // std::cout << "N: " << N << std::endl;
+    thrust::device_vector<int> d_vec_num_cutoff_idx(d_num_cutoff_idx, d_num_cutoff_idx + N);
+    int max_num_cutoff = thrust::reduce(thrust::device, d_vec_num_cutoff_idx.begin(), d_vec_num_cutoff_idx.end(), 0, thrust::maximum<int>());
 
-    // // copy back and print gpubuf.site_element
-    // ELEMENT *site_element = new ELEMENT[N];
-    // hipMemcpy(site_element, gpubuf.site_element, N * sizeof(ELEMENT), hipMemcpyDeviceToHost);
-    // for (int i = 0; i < N; i++)
+    int *d_cutoff_idx;
+    gpuErrchk( cudaMalloc((void**)&d_cutoff_idx, (size_t)N * (size_t)max_num_cutoff * sizeof(int)) );
+    gpuErrchk( cudaMemset(d_cutoff_idx, -1, (size_t)N * (size_t)max_num_cutoff * sizeof(int)) );     // unused neighbor elements are set to -1
+    gpuErrchk( cudaDeviceSynchronize() );
+
+    populate_cutoff_idx<<<num_blocks, num_threads>>>(d_cutoff_idx, d_element, d_posx, d_posy, d_posz, cutoff_radius, N, max_num_cutoff);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
+    std::cout << "max_num_cutoff: " << max_num_cutoff << "\n";
+
+    // int* h_num_cutoff_idx = new int[N * max_num_cutoff];
+    // cudaMemcpy(h_num_cutoff_idx, d_cutoff_idx, N * max_num_cutoff * sizeof(int), cudaMemcpyDeviceToHost);
+    // for (int i = 0; i < 1; ++i)
     // {
-    //     std::cout << "site_element[" << i << "] = " << site_element[i] << std::endl;
+    //     std::cout << "Element " << i << ": ";
+    //     for (int j = 0; j < max_num_cutoff; ++j)
+    //     {
+    //         std::cout << h_num_cutoff_idx[i * max_num_cutoff + j] << " ";
+    //     }
+    //     std::cout << std::endl;
     // }
 
-    // double *site_x = new double[N];
-    // hipMemcpy(site_x, gpubuf.site_x, N * sizeof(double), hipMemcpyDeviceToHost);
-    // for (int i = 0; i < N; i++)
-    // {
-    //     std::cout << "site_x[" << i << "] = " << site_x[i] << std::endl;
-    // }
+    // get the neighbor lists back to host
+    cudaMemcpy(neigh_idx, d_neigh_idx, N * max_num_neighbors * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(cutoff_window, d_cutoff_window, N * 2 * sizeof(int), cudaMemcpyDeviceToHost);
+    cutoff_idx.resize(N * max_num_cutoff, 0);
+    cudaMemcpy(cutoff_idx.data(), d_cutoff_idx, N * max_num_cutoff * sizeof(int), cudaMemcpyDeviceToHost);
 
-    int max_num_cutoff = thrust::reduce(d_num_cutoff_idx, d_num_cutoff_idx + counts_this_rank, 0, thrust::maximum<int>());
-    MPI_Allreduce(MPI_IN_PLACE, &max_num_cutoff, 1, MPI_INT, MPI_MAX, pairwise_comm);
-    gpubuf.N_cutoff_ = max_num_cutoff;
-    std::cout << "max num cutoff " << max_num_cutoff << std::endl; 
-
-    // print max_num_cutoff * N in gigabytes
-    std::cout << "rank : " << rank << " memcon for cutoff_idx: " << (size_t)max_num_cutoff * (size_t)counts_this_rank * sizeof(int) / 1e9 << " GB" << std::endl;
-    fflush(stdout);
-
-    // print N and max_num_cutoff:
-    std::cout << "rank : " << rank << " N: " << N << " max_num_cutoff: " << max_num_cutoff << std::endl;
-
-    // int *d_cutoff_idx;
-    gpuErrchk( hipMalloc((void**)&gpubuf.cutoff_idx, (size_t)counts_this_rank * (size_t)max_num_cutoff * sizeof(int)) );
-    gpuErrchk( hipMemset(gpubuf.cutoff_idx, -1, (size_t)counts_this_rank * (size_t)max_num_cutoff * sizeof(int)) );     // unused neighbor elements are set to -1
-    gpuErrchk( hipDeviceSynchronize() );
-
-    populate_cutoff_idx<<<num_blocks, num_threads>>>(gpubuf.cutoff_idx, gpubuf.site_element, gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, cutoff_radius, N, 
-                                                     max_num_cutoff, counts_this_rank, displs_this_rank);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
-
-    hipFree(d_num_cutoff_idx);
-
-    if (!rank) 
-    {
-        std::cout << "*********************************\n";
-        std::cout << "Memory consumption after constructing device and computing neighbor lists" << std::endl;
-        std::string rocm_smi_output = exec1("rocm-smi --showmeminfo vram");
-        std::cout << rocm_smi_output;
-        std::cout << "**********************************\n";
-        fflush(stdout);
-    }
+    cudaFree(d_posx);
+    cudaFree(d_posy);
+    cudaFree(d_posz);
+    cudaFree(d_lattice);
+    cudaFree(d_neigh_idx);
+    cudaFree(d_cutoff_window);
+    cudaFree(d_num_cutoff_idx);
+    cudaFree(d_cutoff_idx);
 }

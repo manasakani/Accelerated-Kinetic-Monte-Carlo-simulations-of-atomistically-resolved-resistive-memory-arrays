@@ -23,6 +23,7 @@ public:
     int output_freq;
     bool log_to_file;
     bool verbose;
+    bool restart_temperature = 1;
     
     // device atomic structure
     std::string atom_xyz_file;
@@ -34,6 +35,7 @@ public:
     std::vector<double> lattice;
     double freq;
     double nn_dist;
+    double event_dist;
     bool pbc;
     int num_atoms_first_layer;
     int num_layers_contact;
@@ -42,8 +44,9 @@ public:
     std::vector<ELEMENT> metals;
     
     // Device constants
-	double t_ox;                       	// thickness oxide in [m]
-    double A;							// device area [m^2]
+	double t_ox;                       	            // thickness oxide in [m]
+    double A;							            // device area [m^2]
+    double reservoir_layer_start = 52.643100;       // x-coordinate of where the reservoir layer starts [A]
     
     // field solvers
     bool solve_potential;

@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 #include "utils_cg.h"
 
 __global__ void _pack_gpu(
@@ -23,7 +22,7 @@ void pack_gpu(
 {
     int block_size = 32;
     int num_blocks = (number_of_elements + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_pack_gpu, num_blocks, block_size, 0, 0, 
+    _pack_gpu<<<num_blocks, block_size>>>(
         packed_buffer,
         unpacked_buffer,
         indices,
@@ -36,12 +35,12 @@ void pack_gpu(
     double *unpacked_buffer,
     int *indices,
     int number_of_elements,
-    hipStream_t stream
+    cudaStream_t stream
 )
 {
     int block_size = 32;
     int num_blocks = (number_of_elements + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_pack_gpu, num_blocks, block_size, 0, stream, 
+    _pack_gpu<<<num_blocks, block_size, 0, stream>>>(
         packed_buffer,
         unpacked_buffer,
         indices,
@@ -71,7 +70,7 @@ void unpack_gpu(
 {
     int block_size = 32;
     int num_blocks = (number_of_elements + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_unpack_gpu, num_blocks, block_size, 0, 0, 
+    _unpack_gpu<<<num_blocks, block_size>>>(
         unpacked_buffer,
         packed_buffer,
         indices,
@@ -84,12 +83,12 @@ void unpack_gpu(
     double *packed_buffer,
     int *indices,
     int number_of_elements,
-    hipStream_t stream
+    cudaStream_t stream
 )
 {
     int block_size = 32;
     int num_blocks = (number_of_elements + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_unpack_gpu, num_blocks, block_size, 0, stream, 
+    _unpack_gpu<<<num_blocks, block_size, 0, stream>>>(
         unpacked_buffer,
         packed_buffer,
         indices,
@@ -119,7 +118,7 @@ void unpack_add(
 {
     int block_size = 32;
     int num_blocks = (number_of_elements + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_unpack_add, num_blocks, block_size, 0, 0, 
+    _unpack_add<<<num_blocks, block_size>>>(
         unpacked_buffer,
         packed_buffer,
         indices,
@@ -133,12 +132,12 @@ void unpack_add(
     double *packed_buffer,
     int *indices,
     int number_of_elements,
-    hipStream_t stream
+    cudaStream_t stream
 )
 {
     int block_size = 32;
     int num_blocks = (number_of_elements + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_unpack_add, num_blocks, block_size, 0, stream, 
+    _unpack_add<<<num_blocks, block_size, 0, stream>>>(
         unpacked_buffer,
         packed_buffer,
         indices,
@@ -170,7 +169,7 @@ void cg_addvec(
 {
     int block_size = 1024;
     int num_blocks = (n + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_cg_addvec, num_blocks, block_size, 0, 0, x, beta, y, n);
+    _cg_addvec<<<num_blocks, block_size>>>(x, beta, y, n);
 }
 
 void cg_addvec(
@@ -178,12 +177,12 @@ void cg_addvec(
     double beta,
     double *y,
     int n,
-    hipStream_t stream
+    cudaStream_t stream
 )
 {
     int block_size = 1024;
     int num_blocks = (n + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_cg_addvec, num_blocks, block_size, 0, stream, x, beta, y, n);
+    _cg_addvec<<<num_blocks, block_size, 0, stream>>>(x, beta, y, n);
 }
 
 __global__ void _fused_daxpy(
@@ -215,7 +214,7 @@ void fused_daxpy(
 {
     int block_size = 1024;
     int num_blocks = (n + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_fused_daxpy, num_blocks, block_size, 0, 0, 
+    _fused_daxpy<<<num_blocks, block_size>>>(
         alpha1,
         alpha2,
         x1,
@@ -234,12 +233,12 @@ void fused_daxpy(
     double *y1,
     double *y2,
     int n,
-    hipStream_t stream
+    cudaStream_t stream
 )
 {
     int block_size = 1024;
     int num_blocks = (n + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_fused_daxpy, num_blocks, block_size, 0, stream, 
+    _fused_daxpy<<<num_blocks, block_size, 0, stream>>>(
         alpha1,
         alpha2,
         x1,
@@ -284,7 +283,7 @@ void fused_daxpy2(
     int block_size = 1024;
     int num_blocks = (n + block_size - 1) / block_size;
     num_blocks *= 2;
-    hipLaunchKernelGGL(_fused_daxpy2, num_blocks, block_size, 0, 0, 
+    _fused_daxpy2<<<num_blocks, block_size>>>(
         alpha1,
         alpha2,
         x1,
@@ -303,13 +302,13 @@ void fused_daxpy2(
     double *y1,
     double *y2,
     int n,
-    hipStream_t stream
+    cudaStream_t stream
 )
 {
     int block_size = 1024;
     int num_blocks = (n + block_size - 1) / block_size;
     num_blocks *= 2;
-    hipLaunchKernelGGL(_fused_daxpy2, num_blocks, block_size, 0, stream, 
+    _fused_daxpy2<<<num_blocks, block_size, 0, stream>>>(
         alpha1,
         alpha2,
         x1,
@@ -344,7 +343,7 @@ void elementwise_vector_vector(
 {
     int block_size = 1024;
     int num_blocks = (size + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_elementwise_vector_vector, num_blocks, block_size, 0, 0, 
+    _elementwise_vector_vector<<<num_blocks, block_size>>>(
         array1,
         array2,
         result,
@@ -357,12 +356,12 @@ void elementwise_vector_vector(
     double *array2,
     double *result,
     int size,
-    hipStream_t stream
+    cudaStream_t stream
 )
 {
     int block_size = 1024;
     int num_blocks = (size + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_elementwise_vector_vector, num_blocks, block_size, 0, stream, 
+    _elementwise_vector_vector<<<num_blocks, block_size, 0, stream>>>(
         array1,
         array2,
         result,

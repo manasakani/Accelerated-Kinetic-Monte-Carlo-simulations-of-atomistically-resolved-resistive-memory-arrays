@@ -1,9 +1,7 @@
-#include "hip/hip_runtime.h"
 #include "gpu_solvers.h"
 
 //#define NUM_THREADS 512
 #define NUM_THREADS 512
-const double eV_to_J = 1.60217663e-19;          // [C]
 
 //******************************************
 // Updating the charge of every charged site
@@ -14,76 +12,62 @@ __global__ void update_charge(const ELEMENT *element,
                               const int *neigh_idx, 
                               const int N, 
                               const int nn,
-                              const ELEMENT* metals, const int num_metals, 
-                              const int row_start, const int row_end){
+                              const ELEMENT* metals, const int num_metals){
 
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int Vnn = 0;
 
     // each thread gets a different site to evaluate
-    for (int idx = tid; idx < (row_end - row_start); idx += blockDim.x * gridDim.x) {
+    for (int idx = tid; idx < N; idx += blockDim.x * gridDim.x) {
 
-        int i = idx + row_start;
-
-        if (element[i] == VACANCY){
-            charge[i] = 2;    
+        charge[tid] = 0;
+        
+        if (tid < N && element[tid] == VACANCY){
+            charge[tid] = 2;
 
             // iterate over the neighbors
-            for (int j = idx * nn; j < (idx + 1) * nn; ++j){
-                if (neigh_idx[j] >= 0)
+            for (int j = tid * nn; j < (tid + 1) * nn; ++j){
+                if (neigh_idx[j] >=0)
                 {
                     if (element[neigh_idx[j]] == VACANCY){
                         Vnn++;
                     }
                     if (is_in_array_gpu(metals, element[neigh_idx[j]], num_metals)){
-                        charge[i] = 0;
+                        charge[tid] = 0;
                     }
                     if (Vnn >= 2){
-                        charge[i] = 0;
+                        charge[tid] = 0;
                     }
                 }
             }
         }
 
-        if (element[i] == OXYGEN_DEFECT){
-            charge[i] = -2;
+        if (tid < N && element[tid] == OXYGEN_DEFECT){
+            charge[tid] = -2;
 
             // iterate over the neighbors
-            for (int j = idx * nn; j < (idx + 1) * nn; ++j){
-                if (neigh_idx[j] >= 0)
+            for (int j = tid * nn; j < (tid + 1) * nn; ++j){
+                if (neigh_idx[j] >=0)
                 {
                     if (is_in_array_gpu(metals, element[neigh_idx[j]], num_metals)){
-                        charge[i] = 0;
+                        charge[tid] = 0;
                     }
                 }
             }
         }
-        
     }
 }
-
 
 void update_charge_gpu(ELEMENT *d_site_element, 
                        int *d_site_charge,
                        int *d_neigh_idx, int N, int nn, 
-                       const ELEMENT *d_metals, const int num_metals, 
-                       const int *count, const int *displ, MPI_Comm &comm){
-
-    int rank;
-    MPI_Comm_rank(comm, &rank);
+                       const ELEMENT *d_metals, const int num_metals){
 
     int num_threads = 1024;
-    int num_blocks = ((size_t)count[rank] * (size_t)nn + num_threads - 1) / num_threads;
+    int num_blocks = (N * nn + num_threads - 1) / num_threads;
 
-    update_charge<<<num_blocks, num_threads>>>(d_site_element, d_site_charge, d_neigh_idx, N, nn, d_metals, num_metals,
-                                               displ[rank], displ[rank] + count[rank]);
-    hipDeviceSynchronize();
-    // update the site charge on every rank
-    MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
-               d_site_charge, count, displ, MPI_INT, comm);
-
+    update_charge<<<num_blocks, num_threads>>>(d_site_element, d_site_charge, d_neigh_idx, N, nn, d_metals, num_metals);
 }
-
 
 
 //**************************************************************************
@@ -471,29 +455,19 @@ void Assemble_A(
 
     int system_size = K_size - contact_left_size - contact_right_size;
 
-    std::cout << "mpi rank  before mallocs " << std::endl;
-
-    gpuErrchk(hipMalloc((void **)K_left_reduced, system_size * sizeof(double)));
-    gpuErrchk(hipMalloc((void **)K_right_reduced, system_size * sizeof(double)));
-
-    std::cout << "mpi rank  after mallocs " << std::endl;
+    gpuErrchk(cudaMalloc((void **)K_left_reduced, system_size * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)K_right_reduced, system_size * sizeof(double)));
 
     // parallelize over rows
     int threads = 512;
     int blocks = (system_size + threads - 1) / threads;
 
-    std::cout << "mpi rank before A_data mallocs " << std::endl;
-
     // allocate the data array
-    gpuErrchk(hipMalloc((void **)A_data, A_nnz[0] * sizeof(double)));
-    gpuErrchk(hipMemset((*A_data), 0, A_nnz[0] * sizeof(double)));
-
-    std::cout << "mpi rank  after A_data mallocs " << std::endl;
-
-    std::cout << "mpi rank  before calc_off_diagonal_A_gpu " << std::endl;
+    gpuErrchk(cudaMalloc((void **)A_data, A_nnz[0] * sizeof(double)));
+    gpuErrchk(cudaMemset((*A_data), 0, A_nnz[0] * sizeof(double)));
 
     // assemble only smaller part of K
-    hipLaunchKernelGGL(calc_off_diagonal_A_gpu, blocks, threads, 0, 0, 
+    calc_off_diagonal_A_gpu<<<blocks, threads>>>(
         metals_d, element_d + contact_left_size, 
         site_charge_d + contact_left_size,
         num_metals,
@@ -502,19 +476,15 @@ void Assemble_A(
         *A_col_indices,
         *A_row_ptr,
         *A_data);
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
-    std::cout << "mpi rank after calc_off_diagonal_A_gpu " << std::endl;
-
-    hipLaunchKernelGGL(reduce_rows_into_diag, blocks, threads, 0, 0, *A_col_indices, *A_row_ptr, *A_data, system_size);
-    gpuErrchk( hipDeviceSynchronize() );
-
-    std::cout << "mpi rank after reduce_rows_into_diag " << std::endl;
+    reduce_rows_into_diag<<<blocks, threads>>>(*A_col_indices, *A_row_ptr, *A_data, system_size);
+    gpuErrchk( cudaDeviceSynchronize() );
 
     // reduce the left part of K
     // block starts at i = contact_left_size (first downshifted row)
     // block starts at j = 0 (first column)
-    hipLaunchKernelGGL(reduce_contact_into_diag, blocks, threads, 0, 0, 
+    reduce_contact_into_diag<<<blocks, threads>>>(
         metals_d, element_d, site_charge_d,
         system_size,
         contact_left_size,
@@ -527,12 +497,10 @@ void Assemble_A(
         *K_left_reduced
     );
 
-    std::cout << "mpi rank  after reduce_contact_into_diag " << std::endl;
-
     // reduce the right part of K
     // block starts at i = contact_left_size (first downshifted row)
     // block starts at j = contact_left_size + system_size (first column)
-    hipLaunchKernelGGL(reduce_contact_into_diag, blocks, threads, 0, 0, 
+    reduce_contact_into_diag<<<blocks, threads>>>(
         metals_d, element_d, site_charge_d,
         system_size,
         contact_right_size,
@@ -545,28 +513,21 @@ void Assemble_A(
         *K_right_reduced
     );
 
-    std::cout << "mpi rank  after reduce_contact_into_diag2 " << std::endl;
-
     // add left and right part of K to the diagonal of the data array
-    hipLaunchKernelGGL(add_vector_to_diagonal, blocks, threads, 0, 0, 
+    add_vector_to_diagonal<<<blocks, threads>>>(
         *A_data,
         *A_row_ptr,
         *A_col_indices,
         system_size,
         *K_left_reduced
     );
-
-    std::cout << "mpi rank  after add_vector_to_diagonal " << std::endl;
-
-    hipLaunchKernelGGL(add_vector_to_diagonal, blocks, threads, 0, 0, 
+    add_vector_to_diagonal<<<blocks, threads>>>(
         *A_data,
         *A_row_ptr,
         *A_col_indices,
         system_size,
         *K_right_reduced
     );
-
-    std::cout << "mpi rank after add_vector_to_diagonal2 " << std::endl;
 
 }
 
@@ -588,19 +549,19 @@ void Assemble_A_CB(
 
     int system_size = K_size - contact_left_size - contact_right_size;
 
-    gpuErrchk(hipMalloc((void **)K_left_reduced, system_size * sizeof(double)));
-    gpuErrchk(hipMalloc((void **)K_right_reduced, system_size * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)K_left_reduced, system_size * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)K_right_reduced, system_size * sizeof(double)));
 
     // parallelize over rows
     int threads = 512;
     int blocks = (system_size + threads - 1) / threads;
 
     // allocate the data array
-    gpuErrchk(hipMalloc((void **)A_data, A_nnz[0] * sizeof(double)));
-    gpuErrchk(hipMemset((*A_data), 0, A_nnz[0] * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)A_data, A_nnz[0] * sizeof(double)));
+    gpuErrchk(cudaMemset((*A_data), 0, A_nnz[0] * sizeof(double)));
 
     // assemble only smaller part of K
-    hipLaunchKernelGGL(calc_off_diagonal_A_CB_gpu, blocks, threads, 0, 0, 
+    calc_off_diagonal_A_CB_gpu<<<blocks, threads>>>(
         metals_d, element_d + contact_left_size, 
         site_charge_d + contact_left_size,
         num_metals,
@@ -609,15 +570,15 @@ void Assemble_A_CB(
         *A_col_indices,
         *A_row_ptr,
         *A_data);
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
-    hipLaunchKernelGGL(reduce_rows_into_diag, blocks, threads, 0, 0, *A_col_indices, *A_row_ptr, *A_data, system_size);
-    gpuErrchk( hipDeviceSynchronize() );
+    reduce_rows_into_diag<<<blocks, threads>>>(*A_col_indices, *A_row_ptr, *A_data, system_size);
+    gpuErrchk( cudaDeviceSynchronize() );
 
     // reduce the left part of K
     // block starts at i = contact_left_size (first downshifted row)
     // block starts at j = 0 (first column)
-    hipLaunchKernelGGL(row_reduce_K_CB_off_diagonal_block_with_precomputing, blocks, threads, 0, 0, 
+    row_reduce_K_CB_off_diagonal_block_with_precomputing<<<blocks, threads>>>(
         posx, posy, posz,
         lattice, pbc,
         cutoff_radius,
@@ -636,7 +597,7 @@ void Assemble_A_CB(
     // reduce the right part of K
     // block starts at i = contact_left_size (first downshifted row)
     // block starts at j = contact_left_size + system_size (first column)
-    hipLaunchKernelGGL(row_reduce_K_CB_off_diagonal_block_with_precomputing, blocks, threads, 0, 0, 
+    row_reduce_K_CB_off_diagonal_block_with_precomputing<<<blocks, threads>>>(
         posx, posy, posz,
         lattice, pbc,
         cutoff_radius,
@@ -653,14 +614,14 @@ void Assemble_A_CB(
     );
 
     // add left and right part of K to the diagonal of the data array
-    hipLaunchKernelGGL(add_vector_to_diagonal, blocks, threads, 0, 0, 
+    add_vector_to_diagonal<<<blocks, threads>>>(
         *A_data,
         *A_row_ptr,
         *A_col_indices,
         system_size,
         *K_left_reduced
     );
-    hipLaunchKernelGGL(add_vector_to_diagonal, blocks, threads, 0, 0, 
+    add_vector_to_diagonal<<<blocks, threads>>>(
         *A_data,
         *A_row_ptr,
         *A_col_indices,
@@ -670,7 +631,7 @@ void Assemble_A_CB(
 
 }
 
-void update_CB_edge_gpu_sparse(hipblasHandle_t handle_cublas, hipsolverDnHandle_t handle, GPUBuffers &gpubuf,
+void update_CB_edge_gpu_sparse(cublasHandle_t handle_cublas, cusolverDnHandle_t handle, GPUBuffers &gpubuf,
                                const int N, const int N_left_tot, const int N_right_tot,
                                const double Vd, const int pbc, const double high_G, const double low_G, const double nn_dist, 
                                const int num_metals)
@@ -711,19 +672,19 @@ void update_CB_edge_gpu_sparse(hipblasHandle_t handle_cublas, hipsolverDnHandle_
     double *VL, *VR, *rhs;
     double Vl_h = Vd/2;
     double Vr_h = -Vd/2;
-    gpuErrchk( hipMalloc((void **)&VL, 1 * sizeof(double)) );
-    gpuErrchk( hipMalloc((void **)&VR, 1 * sizeof(double)) );
-    gpuErrchk( hipMemcpy(VL, &Vl_h, 1 * sizeof(double), hipMemcpyHostToDevice) );
-    gpuErrchk( hipMemcpy(VR, &Vr_h, 1 * sizeof(double), hipMemcpyHostToDevice) );
-    gpuErrchk( hipMalloc((void **)&rhs, N_interface * sizeof(double)) ); 
-    gpuErrchk( hipMemset(rhs, 0, N_interface * sizeof(double)) );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaMalloc((void **)&VL, 1 * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void **)&VR, 1 * sizeof(double)) );
+    gpuErrchk( cudaMemcpy(VL, &Vl_h, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(VR, &Vr_h, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMalloc((void **)&rhs, N_interface * sizeof(double)) ); 
+    gpuErrchk( cudaMemset(rhs, 0, N_interface * sizeof(double)) );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     int num_threads = 256;
     int num_blocks = (N_interface + num_threads - 1) / num_threads;
-    hipLaunchKernelGGL(calc_rhs_for_A, num_blocks, num_threads, 0, 0, K_left_reduced_d, K_right_reduced_d, VL, VR, rhs, N_interface, N_left_tot, N_right_tot);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    calc_rhs_for_A<<<num_blocks, num_threads>>>(K_left_reduced_d, K_right_reduced_d, VL, VR, rhs, N_interface, N_left_tot, N_right_tot);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
     
     // ***********************************
     // 2. Solve system of linear equations 
@@ -731,14 +692,16 @@ void update_CB_edge_gpu_sparse(hipblasHandle_t handle_cublas, hipsolverDnHandle_
     // the initial guess for the solution is the current site-resolved potential inside the device
     double *v_soln = gpubuf.site_CB_edge + N_left_tot;
 
-    hipsparseHandle_t cusparseHandle;
-    hipsparseCreate(&cusparseHandle);
-    hipsparseSetPointerMode(cusparseHandle, HIPSPARSE_POINTER_MODE_DEVICE);
+    cusparseHandle_t cusparseHandle;
+    cusparseCreate(&cusparseHandle);
+    cusparseSetPointerMode(cusparseHandle, CUSPARSE_POINTER_MODE_DEVICE);
 
     // sparse solver with Jacobi preconditioning:
-    solve_sparse_CG_Jacobi(handle_cublas, cusparseHandle, A_data_d, gpubuf.Device_row_ptr_d, gpubuf.Device_col_indices_d, gpubuf.Device_nnz, N_interface, rhs, v_soln);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    // double tol = 1e-14*N_interface;
+    double tol = 1e-10*N_interface;
+    solve_sparse_CG_Jacobi(handle_cublas, cusparseHandle, A_data_d, gpubuf.Device_row_ptr_d, gpubuf.Device_col_indices_d, gpubuf.Device_nnz, N_interface, rhs, v_soln, tol);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     // ***************************************************************************
     // 3. Re-fix the boundary (for changes in applied potential across an IV sweep)
@@ -749,25 +712,25 @@ void update_CB_edge_gpu_sparse(hipblasHandle_t handle_cublas, hipsolverDnHandle_
     thrust::fill(right_boundary, right_boundary + N_right_tot, -Vd/2);
 
     // Multiply by ev_to_J for the correct units of energy
-    CheckCublasError( hipblasDscal(handle_cublas, N, &eV_to_J, gpubuf.site_CB_edge, 1) ); 
+    CheckCublasError( cublasDscal(handle_cublas, N, &eV_to_J, gpubuf.site_CB_edge, 1) ); 
 
-    // // check solution vector
+    // check solution vector
     // double *copy_back = (double *)calloc(N, sizeof(double));
-    // gpuErrchk( hipMemcpy(copy_back, gpubuf.site_CB_edge, N * sizeof(double), hipMemcpyDeviceToHost) );
+    // gpuErrchk( cudaMemcpy(copy_back, gpubuf.site_CB_edge, N * sizeof(double), cudaMemcpyDeviceToHost) );
     // for (int i = 0; i < N; i++){
     //     std::cout << copy_back[i] << " ";
     // }
     // std::cout << "\nPrinted solution vector, now exiting\n";
     // exit(1);
 
-    hipsparseDestroy(cusparseHandle);
-    hipFree(A_data_d);
-    hipFree(VL);
-    hipFree(VR);
-    hipFree(rhs);
-    hipFree(K_left_reduced_d);
-    hipFree(K_right_reduced_d);
-    gpuErrchk( hipPeekAtLastError() );
+    cusparseDestroy(cusparseHandle);
+    cudaFree(A_data_d);
+    cudaFree(VL);
+    cudaFree(VR);
+    cudaFree(rhs);
+    cudaFree(K_left_reduced_d);
+    cudaFree(K_right_reduced_d);
+    gpuErrchk( cudaPeekAtLastError() );
 
 }
 
@@ -842,318 +805,9 @@ __global__ void sum_AB_into_A(
     }
 }
 
-
-void background_potential_gpu_sparse(hipblasHandle_t handle_cublas, hipsolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
-                                     const double Vd, const int pbc, const double high_G, const double low_G, const double nn_dist,
-                                     const int num_metals, int kmc_step_count)
-{
-
-    Distributed_matrix *A_distributed = gpubuf.K_distributed;
-    int rows_this_rank = A_distributed->rows_this_rank;
-    int disp_this_rank = A_distributed->displacements[A_distributed->rank];
-    // device submatrix size
-    int N_interface = N - (N_left_tot + N_right_tot);
-
-    double *rhs_local_d;
-    gpuErrchk( hipMalloc((void **)&rhs_local_d, A_distributed->rows_this_rank * sizeof(double)) );
-    
-    // the initial guess for the solution is the current site-resolved potential inside the device
-    double *v_soln = gpubuf.site_potential_boundary + N_left_tot + disp_this_rank;
-    double *inv_diagonal_d;
-    gpuErrchk( hipMalloc((void **)&inv_diagonal_d, A_distributed->rows_this_rank * sizeof(double)) );
-
-    double *VL, *VR;
-    double Vl_h = -Vd/2;
-    double Vr_h = Vd/2;
-    gpuErrchk( hipMalloc((void **)&VL, 1 * sizeof(double)) );
-    gpuErrchk( hipMalloc((void **)&VR, 1 * sizeof(double)) );
-    gpuErrchk( hipMemcpy(VL, &Vl_h, 1 * sizeof(double), hipMemcpyHostToDevice) );
-    gpuErrchk( hipMemcpy(VR, &Vr_h, 1 * sizeof(double), hipMemcpyHostToDevice) );
-
-    // compute the local pieces of the diagonal
-    double *diagonal_local_d;
-    gpuErrchk( hipMalloc((void **)&diagonal_local_d, A_distributed->rows_this_rank* sizeof(double)) );
-    // contribution to diagonal from left boundary
-    double *left_boundary_d;
-    gpuErrchk( hipMalloc((void **)&left_boundary_d, A_distributed->rows_this_rank * sizeof(double)) );      
-    // contribution to diagonal from right boundary
-    double *right_boundary_d;
-    gpuErrchk( hipMalloc((void **)&right_boundary_d, A_distributed->rows_this_rank * sizeof(double)) );  
-
-    // TODO: remove the MPI barrier inside
-    // double relative_tolerance = 1e-14 * N_interface;
-    double relative_tolerance = 1e-14 * N_interface;
-    int max_iterations = 10000;
-    int measurements = 1;
-
-    // double time_assembly[measurements];
-    
-    for(int j = 0; j < measurements; j++){
-
-        gpuErrchk( hipMemset(rhs_local_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
-        gpuErrchk( hipMemset(inv_diagonal_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
-        gpuErrchk( hipMemset(diagonal_local_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
-        gpuErrchk( hipMemset(left_boundary_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
-        gpuErrchk( hipMemset(right_boundary_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
-
-
-        // hipDeviceSynchronize();
-        // MPI_Barrier(A_distributed->comm);
-        // auto time_start = std::chrono::high_resolution_clock::now();
-
-
-        // *********************************************************************
-        // 1. Assemble the device conductance matrix (A) and the boundaries (rhs)
-        // based on the precalculated sparsity of the neighbor connections (CSR rows/cols)
-
-        // ** prepare the matrix (fill in the sparsity pattern)
-        // TODO switch to COO format to assemble faster
-        int threads = 1024;
-        int blocks = (A_distributed->rows_this_rank + threads - 1) / threads;   
-    
-        for(int i = 0; i < A_distributed->number_of_neighbours; i++){
-
-            int rows_neighbour = A_distributed->counts[A_distributed->neighbours[i]];
-            int disp_neighbour = A_distributed->displacements[A_distributed->neighbours[i]];
-
-            //maybe remove it
-            gpuErrchk(hipMemset(A_distributed->data_d[i], 0,
-                A_distributed->nnz_per_neighbour[i] * sizeof(double)) );
-
-            hipLaunchKernelGGL(calc_off_diagonal_dist, blocks, threads, 0, 0, 
-                gpubuf.metal_types, gpubuf.site_element, gpubuf.site_charge,
-                rows_this_rank,
-                rows_neighbour,
-                N_left_tot + disp_this_rank,
-                N_left_tot + disp_neighbour,
-                num_metals,
-                high_G, low_G,
-                A_distributed->col_indices_d[i],
-                A_distributed->row_ptr_d[i],
-                A_distributed->data_d[i]);
-        }
-
-
-        // ** update the diagonal
-        // sum the sub-blocks of the matrix owned by this rank into its diagonal
-        for(int i = 0; i < A_distributed->number_of_neighbours; i++){
-            // needs that the diagonal element is zero
-            hipLaunchKernelGGL(reduce_rows_into_diag, blocks, threads, 0, 0, 
-                A_distributed->col_indices_d[i],
-                A_distributed->row_ptr_d[i],
-                A_distributed->data_d[i],
-                diagonal_local_d,
-                A_distributed->rows_this_rank
-                );
-        }
-
-        // update the diagonal with the terms corresponding to the left boundary
-        hipLaunchKernelGGL(reduce_contact_into_diag, blocks, threads, 0, 0, 
-            gpubuf.metal_types, gpubuf.site_element, gpubuf.site_charge,
-            A_distributed->rows_this_rank,
-            N_left_tot,
-            N_left_tot + disp_this_rank,
-            0,
-            num_metals,
-            high_G, low_G,        
-            gpubuf.left_col_indices_d,
-            gpubuf.left_row_ptr_d,
-            left_boundary_d
-        );
-
-        // update the diagonal with the terms corresponding to the right boundary
-        hipLaunchKernelGGL(reduce_contact_into_diag, blocks, threads, 0, 0, 
-            gpubuf.metal_types, gpubuf.site_element, gpubuf.site_charge,
-            A_distributed->rows_this_rank,
-            N_right_tot,
-            N_left_tot + disp_this_rank,
-            N_left_tot + N_interface,
-            num_metals,
-            high_G, low_G,        
-            gpubuf.right_col_indices_d,
-            gpubuf.right_row_ptr_d,
-            right_boundary_d
-        );
-
-        // insert the diagonal elements into the matrix
-        hipLaunchKernelGGL(insert_into_diag, blocks, threads, 0, 0, 
-            diagonal_local_d,
-            left_boundary_d,
-            right_boundary_d,
-            A_distributed->col_indices_d[0],
-            A_distributed->row_ptr_d[0],
-            A_distributed->data_d[0],
-            A_distributed->rows_this_rank
-        );
-
-        // // DEBUG
-        // dump A into a text file:
-        // dump_csr_matrix_txt(N_interface, A_distributed->nnz, A_distributed->row_ptr_d[0],  A_distributed->col_indices_d[0], A_distributed->data_d[0], 0);
-        // std::cout << "dumped csr matrix\n";
-        // exit(1);
-        // // DEBUG
-
-        // Prepare the RHS vector: rhs = -K_left_interface * VL - K_right_interface * VR
-        // we take the negative and do rhs = K_left_interface * VL + K_right_interface * VR to account for a sign change in v_soln
-
-
-        // ***********************************
-        // 2. Solve system of linear equations 
-
-
-
-        // hipsparseHandle_t cusparseHandle;
-        // hipsparseCreate(&cusparseHandle);
-        // hipsparseSetPointerMode(cusparseHandle, HIPSPARSE_POINTER_MODE_DEVICE);
-
-        // //debug - calls local solver
-        // double *rhs_local_d;
-        // gpuErrchk( hipMalloc((void **)&rhs_local_d, A_distributed->rows_this_rank * sizeof(double)) );
-        // gpuErrchk( hipMemset(rhs_local_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
-        // hipLaunchKernelGGL(calc_rhs_for_A, blocks, threads, 0, 0, left_boundary_d, right_boundary_d, VL, VR,
-        //     rhs_local_d, A_distributed->rows_this_rank, N_left_tot, N_right_tot);
-        // solve_sparse_CG_Jacobi(handle_cublas, cusparseHandle, A_distributed->data_d[0], A_distributed->row_ptr_d[0], A_distributed->col_indices_d[0], A_distributed->nnz, N_interface, rhs_local_d, v_soln);
-        // //debug
-
-
-        hipLaunchKernelGGL(inverse_diag, blocks, threads, 0, 0, 
-            inv_diagonal_d,
-            diagonal_local_d,
-            left_boundary_d,
-            right_boundary_d,
-            A_distributed->rows_this_rank);
-
-
-
-        hipLaunchKernelGGL(calc_rhs_for_A, blocks, threads, 0, 0, left_boundary_d, right_boundary_d, VL, VR,
-            rhs_local_d, A_distributed->rows_this_rank, N_left_tot, N_right_tot);
-        
-        // hipDeviceSynchronize();
-        // MPI_Barrier(A_distributed->comm);
-        
-        // auto time_end = std::chrono::high_resolution_clock::now();
-
-        // time_assembly[j] = std::chrono::duration<double>(time_end - time_start).count();
-        // if(A_distributed->rank == 0){
-        //     std::cout << "Time assembly: " << time_assembly[j] << std::endl;
-        // }
-
-
-    }
-
-
-
-    // double *rhs_local_d_copy;
-    // gpuErrchk( hipMalloc((void **)&rhs_local_d_copy, A_distributed->rows_this_rank * sizeof(double)) );
-    // gpuErrchk( hipMemcpy(rhs_local_d_copy, rhs_local_d, A_distributed->rows_this_rank * sizeof(double), hipMemcpyDeviceToDevice) );
-    // double *starting_guess_copy_d;
-    // gpuErrchk( hipMalloc((void **)&starting_guess_copy_d, A_distributed->rows_this_rank * sizeof(double)) );
-    // gpuErrchk( hipMemcpy(starting_guess_copy_d, v_soln, A_distributed->rows_this_rank * sizeof(double), hipMemcpyDeviceToDevice) );
-
-    // double *time_method_1 = new double[measurements];
-
-    for(int i = 0; i < measurements; i++){
-
-        // hipMemcpy(rhs_local_d, rhs_local_d_copy, A_distributed->rows_this_rank * sizeof(double), hipMemcpyDeviceToDevice);
-        // hipMemcpy(v_soln, starting_guess_copy_d, A_distributed->rows_this_rank * sizeof(double), hipMemcpyDeviceToDevice);
-        // hipDeviceSynchronize();
-        // MPI_Barrier(A_distributed->comm);
-        // auto time_start = std::chrono::high_resolution_clock::now();
-
-
-        iterative_solver::conjugate_gradient_jacobi<dspmv::gpu_packing_cam>(
-            *gpubuf.K_distributed,
-            *gpubuf.K_p_distributed,
-            rhs_local_d,
-            v_soln,
-            inv_diagonal_d,
-            relative_tolerance,
-            max_iterations,
-            A_distributed->comm);
-
-
-        // hipDeviceSynchronize();
-        // MPI_Barrier(A_distributed->comm);
-        // auto time_end = std::chrono::high_resolution_clock::now();
-        // time_method_1[i] = std::chrono::duration<double>(time_end - time_start).count();
-        // if(A_distributed->rank == 0){
-        //     std::cout << "Time cg : " << time_method_1[i] << std::endl;
-        // }
-
-    }
-
-
-    // if(A_distributed->rank == 0){
-    //     std::string base_path =  "final_reordered/";
-
-    //     // dump time to txt file
-    //     std::ofstream time_file;
-    //     std::string name1 = base_path + "time_assembly_cg_"
-    //     + std::to_string(A_distributed->size) +".txt";
-    //     time_file.open(name1);
-    //     for(int i = 0; i < measurements; i++){
-    //         time_file << time_assembly[i] << std::endl;
-    //     }
-    //     time_file.close();
-
-    // }
-
-
-    // if(A_distributed->rank == 0){
-    //     std::string base_path = "final_reordered/";
-
-    //     // dump time to txt file
-    //     std::ofstream time_file;
-    //     std::string name1 = base_path + "time_cg_" + std::to_string(A_distributed->size) +".txt";
-    //     time_file.open(name1);
-    //     for(int i = 0; i < measurements; i++){
-    //         time_file << time_method_1[i] << std::endl;
-    //     }
-    //     time_file.close();
-
-    // }
-
-
-
-    // hipsparseDestroy(cusparseHandle);
-    hipFree(VL);
-    hipFree(VR);
-    gpuErrchk( hipFree(rhs_local_d) );
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipFree(diagonal_local_d) );
-    gpuErrchk( hipFree(left_boundary_d) );
-    gpuErrchk( hipFree(right_boundary_d) );
-    gpuErrchk( hipFree(inv_diagonal_d) );     
-
-}
-
-void sum_and_gather_potential(GPUBuffers &gpubuf, int num_atoms_first_layer, KMC_comm &kmc_comm)
-{
-    // broadcast in comm_events
-    MPI_Bcast(gpubuf.site_potential_boundary + num_atoms_first_layer,
-        gpubuf.N_ - 2*num_atoms_first_layer,
-        MPI_DOUBLE,
-        kmc_comm.root_K, kmc_comm.comm_events);
-
-    // broadcast in comm_events
-    MPI_Bcast(gpubuf.site_potential_charge,
-        gpubuf.N_,
-        MPI_DOUBLE,
-        kmc_comm.root_pairwise, kmc_comm.comm_events);
-    // sum the potential vectors
-    int threads = 1024;
-    int blocks = ( gpubuf.N_ + threads- 1) / threads;
-    // compute the off-diagonal elements of K
-    hipLaunchKernelGGL(sum_AB_into_A, blocks, threads, 0, 0,
-        gpubuf.site_potential_charge, 
-        gpubuf.site_potential_boundary,
-        gpubuf.N_);
-}
-
-
-void background_potential_gpu_sparse_local(hipblasHandle_t handle_cublas, hipsolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
-                                            const double Vd, const int pbc, const double high_G, const double low_G, const double nn_dist,
-                                            const int num_metals, int kmc_step_count)
+void background_potential_gpu_sparse_local(cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
+                                           const double Vd, const int pbc, const double high_G, const double low_G, const double nn_dist,
+                                           const int num_metals, int kmc_step_count)
 {
 
     // *********************************************************************
@@ -1195,19 +849,19 @@ void background_potential_gpu_sparse_local(hipblasHandle_t handle_cublas, hipsol
     double *VL, *VR, *rhs;
     double Vl_h = -Vd/2;
     double Vr_h = Vd/2;
-    gpuErrchk( hipMalloc((void **)&VL, 1 * sizeof(double)) );
-    gpuErrchk( hipMalloc((void **)&VR, 1 * sizeof(double)) );
-    gpuErrchk( hipMemcpy(VL, &Vl_h, 1 * sizeof(double), hipMemcpyHostToDevice) );
-    gpuErrchk( hipMemcpy(VR, &Vr_h, 1 * sizeof(double), hipMemcpyHostToDevice) );
-    gpuErrchk( hipMalloc((void **)&rhs, N_interface * sizeof(double)) ); 
-    gpuErrchk( hipMemset(rhs, 0, N_interface * sizeof(double)) );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaMalloc((void **)&VL, 1 * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void **)&VR, 1 * sizeof(double)) );
+    gpuErrchk( cudaMemcpy(VL, &Vl_h, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(VR, &Vr_h, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMalloc((void **)&rhs, N_interface * sizeof(double)) ); 
+    gpuErrchk( cudaMemset(rhs, 0, N_interface * sizeof(double)) );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     int num_threads = 256;
     int num_blocks = (N_interface + num_threads - 1) / num_threads;
     calc_rhs_for_A<<<num_blocks, num_threads>>>(K_left_reduced_d, K_right_reduced_d, VL, VR, rhs, N_interface, N_left_tot, N_right_tot);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     // std::cout << "mpi rank" << gpubuf.rank << "  after calc_rhs_for_A " << std::endl;
     
@@ -1217,16 +871,18 @@ void background_potential_gpu_sparse_local(hipblasHandle_t handle_cublas, hipsol
     // the initial guess for the solution is the current site-resolved potential inside the device
     double *v_soln = gpubuf.site_potential_boundary + N_left_tot;
 
-    hipsparseHandle_t cusparseHandle;
-    hipsparseCreate(&cusparseHandle);
-    hipsparseSetPointerMode(cusparseHandle, HIPSPARSE_POINTER_MODE_DEVICE);
+    cusparseHandle_t cusparseHandle;
+    cusparseCreate(&cusparseHandle);
+    cusparseSetPointerMode(cusparseHandle, CUSPARSE_POINTER_MODE_DEVICE);
 
     // std::cout << "mpi rank" << gpubuf.rank << "  going to solve " << std::endl;
 
     // sparse solver with Jacobi preconditioning:
-    solve_sparse_CG_Jacobi(handle_cublas, cusparseHandle, A_data_d, gpubuf.Device_row_ptr_d, gpubuf.Device_col_indices_d, gpubuf.Device_nnz, N_interface, rhs, v_soln);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    double tol = 1e-14*N_interface;
+    // double tol = 1e-28*N_interface; // low tol for debugging
+    solve_sparse_CG_Jacobi(handle_cublas, cusparseHandle, A_data_d, gpubuf.Device_row_ptr_d, gpubuf.Device_col_indices_d, gpubuf.Device_nnz, N_interface, rhs, v_soln, tol);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     // std::cout << "mpi rank" << gpubuf.rank << "  after solve " << std::endl;
 
@@ -1240,21 +896,264 @@ void background_potential_gpu_sparse_local(hipblasHandle_t handle_cublas, hipsol
 
     // std::cout << "mpi rank" << gpubuf.rank << " refixed the boundary " << std::endl;
 
-    hipsparseDestroy(cusparseHandle);
-    hipFree(A_data_d);
-    hipFree(VL);
-    hipFree(VR);
-    hipFree(rhs);
-    hipFree(K_left_reduced_d);
-    hipFree(K_right_reduced_d);
-    gpuErrchk( hipPeekAtLastError() );
+    cusparseDestroy(cusparseHandle);
+    cudaFree(A_data_d);
+    cudaFree(VL);
+    cudaFree(VR);
+    cudaFree(rhs);
+    cudaFree(K_left_reduced_d);
+    cudaFree(K_right_reduced_d);
+    gpuErrchk( cudaPeekAtLastError() );
 
     // std::cout << "mpi rank" << gpubuf.rank << " freed stuff " << std::endl;
     
 }
 
+
+void background_potential_gpu_sparse(cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
+                                     const double Vd, const int pbc, const double high_G, const double low_G, const double nn_dist,
+                                     const int num_metals, int kmc_step_count)
+{
+
+    // *********************************************************************
+    // 1. Assemble the device conductance matrix (A) and the boundaries (rhs)
+    // based on the precalculated sparsity of the neighbor connections (CSR rows/cols)
+
+    // device submatrix size
+    int N_interface = N - (N_left_tot + N_right_tot);
+
+    // ** prepare the matrix (fill in the sparsity pattern)
+    Distributed_matrix *A_distributed = gpubuf.K_distributed;
+    int rows_this_rank = A_distributed->rows_this_rank;
+    int disp_this_rank = A_distributed->displacements[A_distributed->rank];
+
+    // std::cout << "mpi rank" << gpubuf.rank << "  rows_this_rank " << rows_this_rank << " disp_this_rank " << disp_this_rank << std::endl;
+
+    // TODO switch to COO format to assemble faster
+    int threads = 1024;
+    int blocks = (A_distributed->rows_this_rank + threads - 1) / threads;    
+    for(int i = 0; i < A_distributed->number_of_neighbours; i++){
+
+        int rows_neighbour = A_distributed->counts[A_distributed->neighbours[i]];
+        int disp_neighbour = A_distributed->displacements[A_distributed->neighbours[i]];
+
+        gpuErrchk(cudaMemset(A_distributed->data_d[i], 0,
+            A_distributed->nnz_per_neighbour[i] * sizeof(double)) );
+
+        calc_off_diagonal_dist<<<blocks, threads>>>(
+            gpubuf.metal_types, gpubuf.site_element, gpubuf.site_charge,
+            rows_this_rank,
+            rows_neighbour,
+            N_left_tot + disp_this_rank,
+            N_left_tot + disp_neighbour,
+            num_metals,
+            high_G, low_G,
+            A_distributed->col_indices_d[i],
+            A_distributed->row_ptr_d[i],
+            A_distributed->data_d[i]);
+    }
+
+    // ** update the diagonal
+
+    // compute the local pieces of the diagonal
+    double *diagonal_local_d;
+    gpuErrchk( cudaMalloc((void **)&diagonal_local_d, A_distributed->rows_this_rank * sizeof(double)) );
+    gpuErrchk( cudaMemset(diagonal_local_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
+
+    // contribution to diagonal from left boundary
+    double *left_boundary_d;
+    gpuErrchk( cudaMalloc((void **)&left_boundary_d, A_distributed->rows_this_rank * sizeof(double)) );
+    gpuErrchk( cudaMemset(left_boundary_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
+    
+    // contribution to diagonal from right boundary
+    double *right_boundary_d;
+    gpuErrchk( cudaMalloc((void **)&right_boundary_d, A_distributed->rows_this_rank * sizeof(double)) );
+    gpuErrchk( cudaMemset(right_boundary_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
+
+    // sum the sub-blocks of the matrix owned by this rank into its diagonal
+    for(int i = 0; i < A_distributed->number_of_neighbours; i++){
+        // needs that the diagonal element is zero
+        reduce_rows_into_diag<<<blocks, threads>>>(
+            A_distributed->col_indices_d[i],
+            A_distributed->row_ptr_d[i],
+            A_distributed->data_d[i],
+            diagonal_local_d,
+            A_distributed->rows_this_rank
+            );
+    }
+
+    // // DEBUG
+    // // dump A into a text file:
+    // dump_csr_matrix_txt(N_interface, A_distributed->nnz, A_distributed->row_ptr_d[0],  A_distributed->col_indices_d[0], A_distributed->data_d[0], 0);
+    // std::cout << "dumped csr matrix\n";
+    // exit(1);
+    // // DEBUG
+
+    // copy back and print gpubuf.left_row_ptr_d
+    // int *left_row_ptr_h = (int *)calloc(rows_this_rank + 1, sizeof(int));
+    // gpuErrchk( cudaMemcpy(left_row_ptr_h, gpubuf.left_row_ptr_d, (rows_this_rank + 1) * sizeof(int), cudaMemcpyDeviceToHost) );
+    // for (int i = 0; i < rows_this_rank + 1; i++){
+    //     std::cout << left_row_ptr_h[i] << " ";
+    // }
+    // exit(1);
+
+    // update the diagonal with the terms corresponding to the left boundary
+    reduce_contact_into_diag<<<blocks, threads>>>(
+        gpubuf.metal_types, gpubuf.site_element, gpubuf.site_charge,
+        A_distributed->rows_this_rank,
+        N_left_tot,
+        N_left_tot + disp_this_rank,
+        0,
+        num_metals,
+        high_G, low_G,        
+        gpubuf.left_col_indices_d,
+        gpubuf.left_row_ptr_d,
+        left_boundary_d
+    );
+
+    // update the diagonal with the terms corresponding to the right boundary
+    reduce_contact_into_diag<<<blocks, threads>>>(
+        gpubuf.metal_types, gpubuf.site_element, gpubuf.site_charge,
+        A_distributed->rows_this_rank,
+        N_right_tot,
+        N_left_tot + disp_this_rank,
+        N_left_tot + N_interface,
+        num_metals,
+        high_G, low_G,        
+        gpubuf.right_col_indices_d,
+        gpubuf.right_row_ptr_d,
+        right_boundary_d
+    );
+
+    // insert the diagonal elements into the matrix
+    insert_into_diag<<<blocks, threads>>>(
+        diagonal_local_d,
+        left_boundary_d,
+        right_boundary_d,
+        A_distributed->col_indices_d[0],
+        A_distributed->row_ptr_d[0],
+        A_distributed->data_d[0],
+        A_distributed->rows_this_rank
+    );
+
+    // // DEBUG
+    // dump A into a text file:
+    // dump_csr_matrix_txt(N_interface, A_distributed->nnz, A_distributed->row_ptr_d[0],  A_distributed->col_indices_d[0], A_distributed->data_d[0], 0);
+    // std::cout << "dumped csr matrix\n";
+    // exit(1);
+    // // DEBUG
+
+    // Prepare the RHS vector: rhs = -K_left_interface * VL - K_right_interface * VR
+    // we take the negative and do rhs = K_left_interface * VL + K_right_interface * VR to account for a sign change in v_soln
+    double *VL, *VR;
+    double Vl_h = -Vd/2;
+    double Vr_h = Vd/2;
+    gpuErrchk( cudaMalloc((void **)&VL, 1 * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void **)&VR, 1 * sizeof(double)) );
+    gpuErrchk( cudaMemcpy(VL, &Vl_h, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(VR, &Vr_h, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+
+    // ***********************************
+    // 2. Solve system of linear equations 
+
+    // the initial guess for the solution is the current site-resolved potential inside the device
+    double *v_soln = gpubuf.site_potential_boundary + N_left_tot + disp_this_rank;
+
+    cusparseHandle_t cusparseHandle;
+    cusparseCreate(&cusparseHandle);
+    cusparseSetPointerMode(cusparseHandle, CUSPARSE_POINTER_MODE_DEVICE);
+
+    double *inv_diagonal_d;
+    gpuErrchk( cudaMalloc((void **)&inv_diagonal_d, A_distributed->rows_this_rank * sizeof(double)) );
+
+    inverse_diag<<<blocks, threads>>>(
+        inv_diagonal_d,
+        diagonal_local_d,
+        left_boundary_d,
+        right_boundary_d,
+        A_distributed->rows_this_rank);
+
+    double *rhs_local_d;
+    gpuErrchk( cudaMalloc((void **)&rhs_local_d, A_distributed->rows_this_rank * sizeof(double)) );
+    gpuErrchk( cudaMemset(rhs_local_d, 0, A_distributed->rows_this_rank * sizeof(double)) );
+
+    calc_rhs_for_A<<<blocks, threads>>>(left_boundary_d, right_boundary_d, VL, VR,
+        rhs_local_d, A_distributed->rows_this_rank, N_left_tot, N_right_tot);
+
+    // TODO: remove the MPI barrier inside
+    // double relative_tolerance = 1e-10 * N_interface;
+    double relative_tolerance = 1e-28 * N_interface; // low tol for debugging
+    int max_iterations = 50000;
+    iterative_solver::conjugate_gradient_jacobi<dspmv::gpu_packing>(
+        *gpubuf.K_distributed,
+        *gpubuf.K_p_distributed,
+        rhs_local_d,
+        v_soln,
+        inv_diagonal_d,
+        relative_tolerance,
+        max_iterations,
+        A_distributed->comm);
+
+    // double *v_soln_local_h = (double *)calloc(A_distributed->rows_this_rank, sizeof(double));
+    // gpuErrchk( cudaMemcpy(v_soln_local_h, v_soln, A_distributed->rows_this_rank * sizeof(double), cudaMemcpyDeviceToHost) );
+    // double *v_soln_h = (double *)calloc(N_interface, sizeof(double));
+
+    // MPI_Allgatherv(v_soln_local_h, A_distributed->rows_this_rank,
+    //     MPI_DOUBLE, v_soln_h,
+    //     A_distributed->counts, A_distributed->displacements, MPI_DOUBLE, MPI_COMM_WORLD);
+    // gpuErrchk( cudaMemcpy(gpubuf.site_potential_boundary + N_left_tot, v_soln_h,
+    //     N_interface * sizeof(double), cudaMemcpyHostToDevice) );
+
+    // TODO: remove the reset inside each bias point
+    // 3. Re-fix the boundary (for changes in applied potential across an IV sweep)
+    thrust::device_ptr<double> left_boundary = thrust::device_pointer_cast(gpubuf.site_potential_boundary);
+    thrust::fill(left_boundary, left_boundary + N_left_tot, -Vd/2);
+    thrust::device_ptr<double> right_boundary = thrust::device_pointer_cast(gpubuf.site_potential_boundary + N_left_tot + N_interface);
+    thrust::fill(right_boundary, right_boundary + N_right_tot, Vd/2);
+
+    // cusparseDestroy(cusparseHandle);
+    cudaFree(VL);
+    cudaFree(VR);
+    gpuErrchk( cudaFree(rhs_local_d) );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaFree(diagonal_local_d) );
+    gpuErrchk( cudaFree(left_boundary_d) );
+    gpuErrchk( cudaFree(right_boundary_d) );
+    gpuErrchk( cudaFree(inv_diagonal_d) );
+
+}
+
+void sum_and_gather_potential(GPUBuffers &gpubuf)
+{
+    // sum the potential vectors
+    int threads = 512;
+    int blocks = (gpubuf.count_sites[gpubuf.rank] + threads- 1) / threads;
+
+    // compute the off-diagonal elements of K
+    sum_AB_into_A<<<blocks, threads>>>(gpubuf.site_potential_charge + gpubuf.displ_sites[gpubuf.rank], 
+                                       gpubuf.site_potential_boundary + gpubuf.displ_sites[gpubuf.rank],
+                                       gpubuf.count_sites[gpubuf.rank]);
+    
+    // copy potential vectors to host
+    //double *potential_local_h = (double *)calloc(gpubuf.count_sites[gpubuf.rank], sizeof(double));
+    //double *potential_h = (double *)calloc(gpubuf.N_, sizeof(double));
+
+    gpuErrchk( cudaMemcpy(gpubuf.potential_local_h, gpubuf.site_potential_charge + gpubuf.displ_sites[gpubuf.rank], 
+                gpubuf.count_sites[gpubuf.rank] * sizeof(double), cudaMemcpyDeviceToHost) );
+
+    // allgather potential vector - site_potential_charge contains the sum
+    MPI_Allgatherv(gpubuf.potential_local_h, gpubuf.count_sites[gpubuf.rank],
+        MPI_DOUBLE, gpubuf.potential_h,
+        gpubuf.count_sites, gpubuf.displ_sites, MPI_DOUBLE, MPI_COMM_WORLD);
+
+    // copy potential vector to device    
+    gpuErrchk( cudaMemcpy(gpubuf.site_potential_charge, gpubuf.potential_h,
+        gpubuf.N_ * sizeof(double), cudaMemcpyHostToDevice) );
+
+}
+
 // solves site-resolved background potential using dense matrix assembly and direct LU-solver schemes
-void background_potential_gpu(hipsolverDnHandle_t handle, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
+void background_potential_gpu(cusolverDnHandle_t handle, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
                               const double Vd, const int pbc, const double d_high_G, const double d_low_G, const double nn_dist,
                               const int num_metals, int kmc_step_count)
 {
@@ -1262,15 +1161,15 @@ void background_potential_gpu(hipsolverDnHandle_t handle, GPUBuffers &gpubuf, co
     int N_interface = N - (N_left_tot + N_right_tot);
 
     double *VL, *VR;
-    gpuErrchk( hipMalloc((void **)&VL, N_left_tot * sizeof(double)) );
-    gpuErrchk( hipMalloc((void **)&VR, N_right_tot * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void **)&VL, N_left_tot * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void **)&VR, N_right_tot * sizeof(double)) );
 
     double *gpu_k;
     double *gpu_diag;
-    gpuErrchk( hipMalloc((void **)&gpu_k, N * N * sizeof(double)) );
-    gpuErrchk( hipMalloc((void **)&gpu_diag, N * sizeof(double)) );
-    gpuErrchk( hipMemset(gpu_k, 0, N * N * sizeof(double)) );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaMalloc((void **)&gpu_k, N * N * sizeof(double)) );
+    gpuErrchk( cudaMalloc((void **)&gpu_diag, N * sizeof(double)) );
+    gpuErrchk( cudaMemset(gpu_k, 0, N * N * sizeof(double)) );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     // prepare contact potentials
     thrust::device_ptr<double> VL_ptr = thrust::device_pointer_cast(VL);
@@ -1284,50 +1183,50 @@ void background_potential_gpu(hipsolverDnHandle_t handle, GPUBuffers &gpubuf, co
     int num_blocks = blocks_per_row * N;
 
     // compute the off-diagonal elements of K
-    hipLaunchKernelGGL(create_K, num_blocks, num_threads, 0, 0, 
+    create_K<<<num_blocks, num_threads>>>(
         gpu_k, gpubuf.site_x, gpubuf.site_y, gpubuf.site_z,
         gpubuf.metal_types, gpubuf.site_element, gpubuf.site_charge,
         gpubuf.lattice, pbc, d_high_G, d_low_G,
         nn_dist, N, num_metals);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     // Update the diagonal of K
-    gpuErrchk( hipMemset(gpu_diag, 0, N * sizeof(double)) );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaMemset(gpu_diag, 0, N * sizeof(double)) );
+    gpuErrchk( cudaDeviceSynchronize() );
     row_reduce<NUM_THREADS><<<num_blocks, num_threads, NUM_THREADS * sizeof(double)>>>(gpu_k, gpu_diag, N);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     num_blocks = (N - 1) / num_threads + 1;
-    hipLaunchKernelGGL(write_to_diag, num_blocks, num_threads, 0, 0, gpu_k, gpu_diag, N);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
-    gpuErrchk( hipMemset(gpu_diag, 0, N * sizeof(double)) );
-    gpuErrchk( hipDeviceSynchronize() );
+    write_to_diag<<<num_blocks, num_threads>>>(gpu_k, gpu_diag, N);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchk( cudaMemset(gpu_diag, 0, N * sizeof(double)) );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     blocks_per_row = (N_left_tot - 1) / num_threads + 1;
     num_blocks = blocks_per_row * N_interface;
     diagonal_sum_K<NUM_THREADS><<<num_blocks, num_threads, NUM_THREADS * sizeof(double)>>>(&gpu_k[N_left_tot * N], gpu_diag, VL, N, N_interface, N_left_tot);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     blocks_per_row = (N_right_tot - 1) / num_threads + 1;
     num_blocks = blocks_per_row * N_interface;
     diagonal_sum_K<NUM_THREADS><<<num_blocks, num_threads, NUM_THREADS * sizeof(double)>>>(&gpu_k[N_left_tot * N + N - N_right_tot], gpu_diag, VR, N, N_interface, N_right_tot);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     //  SOLVING FOR THE NEGATIVE INTERNAL POTENTIALS (KSUB)
     double *gpu_k_sub;
-    gpuErrchk( hipMalloc((void **)&gpu_k_sub, N_interface * sizeof(double)) ); 
-    gpuErrchk( hipMemset(gpu_k_sub, 0, N_interface * sizeof(double)) );
-    gpuErrchk( hipDeviceSynchronize() );
+    gpuErrchk( cudaMalloc((void **)&gpu_k_sub, N_interface * sizeof(double)) ); 
+    gpuErrchk( cudaMemset(gpu_k_sub, 0, N_interface * sizeof(double)) );
+    gpuErrchk( cudaDeviceSynchronize() );
     num_blocks = (N_interface - 1) / num_threads + 1;
-    hipLaunchKernelGGL(set_diag_K, blocks_per_row, num_threads, 0, 0, gpu_k_sub, gpu_diag, N_interface);
-    gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );
-    hipFree(gpu_diag);
+    set_diag_K<<<blocks_per_row, num_threads>>>(gpu_k_sub, gpu_diag, N_interface);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+    cudaFree(gpu_diag);
 
     // ** Solve Ax=B through LU factorization **
 
@@ -1335,40 +1234,40 @@ void background_potential_gpu(hipsolverDnHandle_t handle, GPUBuffers &gpubuf, co
     double *gpu_work = nullptr; /* device workspace for getrf */
     int *gpu_info = nullptr;    /* error info */
     int *gpu_ipiv; // int info;
-    gpuErrchk( hipMalloc((void **)&gpu_ipiv, N_interface * sizeof(int)) ); 
-    gpuErrchk( hipMalloc((void **)(&gpu_info), sizeof(int)) );
+    gpuErrchk( cudaMalloc((void **)&gpu_ipiv, N_interface * sizeof(int)) ); 
+    gpuErrchk( cudaMalloc((void **)(&gpu_info), sizeof(int)) );
 
     // points to the start of Koxide inside K:
     double* gpu_D = gpu_k + (N_left_tot * N) + N_left_tot;
 
-    CheckCusolverDnError(hipsolverDnDgetrf_bufferSize(handle, N_interface, N_interface, gpu_D, N, &lwork));
-    gpuErrchk( hipDeviceSynchronize() );
-    gpuErrchk( hipMalloc((void **)(&gpu_work), sizeof(double) * lwork) );
+    CheckCusolverDnError(cusolverDnDgetrf_bufferSize(handle, N_interface, N_interface, gpu_D, N, &lwork));
+    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchk( cudaMalloc((void **)(&gpu_work), sizeof(double) * lwork) );
 
-    CheckCusolverDnError(hipsolverDnDgetrf(handle, N_interface, N_interface, gpu_D, N, gpu_work, gpu_ipiv, gpu_info));
-    // hipMemcpy(&info, gpu_info, sizeof(int), hipMemcpyDeviceToHost); // printf("info for hipsolverDnDgetrf: %i \n", info);
-    gpuErrchk( hipDeviceSynchronize() );
+    CheckCusolverDnError(cusolverDnDgetrf(handle, N_interface, N_interface, gpu_D, N, gpu_work, gpu_ipiv, gpu_info));
+    // cudaMemcpy(&info, gpu_info, sizeof(int), cudaMemcpyDeviceToHost); // printf("info for cusolverDnDgetrf: %i \n", info);
+    gpuErrchk( cudaDeviceSynchronize() );
 
-    CheckCusolverDnError(hipsolverDnDgetrs(handle, HIPSOLVER_OP_N, N_interface, 1, gpu_D, N, gpu_ipiv, gpu_k_sub, N_interface, gpu_info));
-    // hipMemcpy(&info, gpu_info, sizeof(int), hipMemcpyDeviceToHost); // printf("info for hipsolverDnDgetrs: %i \n", info);
-    gpuErrchk( hipDeviceSynchronize() );
+    CheckCusolverDnError(cusolverDnDgetrs(handle, CUBLAS_OP_N, N_interface, 1, gpu_D, N, gpu_ipiv, gpu_k_sub, N_interface, gpu_info));
+    // cudaMemcpy(&info, gpu_info, sizeof(int), cudaMemcpyDeviceToHost); // printf("info for cusolverDnDgetrs: %i \n", info);
+    gpuErrchk( cudaDeviceSynchronize() );
 
-    hipFree(gpu_k);
+    cudaFree(gpu_k);
 
     num_blocks = (N_interface - 1) / num_threads + 1;
-    hipLaunchKernelGGL(set_potential, num_blocks, num_threads, 0, 0, gpubuf.site_potential_boundary + N_left_tot, gpu_k_sub, N_interface);
-    gpuErrchk( hipPeekAtLastError() ); 
-    gpuErrchk( hipDeviceSynchronize() ); 
-    hipFree(gpu_k_sub);
+    set_potential<<<num_blocks, num_threads>>>(gpubuf.site_potential_boundary + N_left_tot, gpu_k_sub, N_interface);
+    gpuErrchk( cudaPeekAtLastError() ); 
+    gpuErrchk( cudaDeviceSynchronize() ); 
+    cudaFree(gpu_k_sub);
 
-    gpuErrchk( hipMemcpy(gpubuf.site_potential_boundary, VL, N_left_tot * sizeof(double), hipMemcpyDeviceToDevice) );
-    gpuErrchk( hipMemcpy(gpubuf.site_potential_boundary + N_left_tot + N_interface, VR, N_right_tot * sizeof(double), hipMemcpyDeviceToDevice) );
+    gpuErrchk( cudaMemcpy(gpubuf.site_potential_boundary, VL, N_left_tot * sizeof(double), cudaMemcpyDeviceToDevice) );
+    gpuErrchk( cudaMemcpy(gpubuf.site_potential_boundary + N_left_tot + N_interface, VR, N_right_tot * sizeof(double), cudaMemcpyDeviceToDevice) );
 
-    hipFree(gpu_ipiv);
-    hipFree(gpu_work);
-    hipFree(gpu_info);
-    hipFree(VL);
-    hipFree(VR);
+    cudaFree(gpu_ipiv);
+    cudaFree(gpu_work);
+    cudaFree(gpu_info);
+    cudaFree(VL);
+    cudaFree(VR);
 
 }
 
@@ -1410,10 +1309,10 @@ __global__ void calculate_pairwise_interaction(const double* posx, const double*
                 dist = 1e-10 * site_dist_gpu(posx[i], posy[i], posz[i], 
                                              posx[j], posy[j], posz[j], 
                                              lattice[0], lattice[1], lattice[2], pbc);
-                // // implement cutoff radius
-                // if (dist < 2e-9) { // HARDCODED
+                // implement cutoff radius
+                if (dist < 2e-9) { // HARDCODED
                     buf[tid] = v_solve_gpu(dist, charge[j], sigma, k);
-                // }
+                }
             }
         }
 
@@ -1432,7 +1331,6 @@ __global__ void calculate_pairwise_interaction(const double* posx, const double*
     
     }
 }
-
 
 __global__ void calculate_pairwise_interaction_windowed(const double* posx, const double* posy, const double*posz, 
                                                         const double *lattice, const int pbc, 
@@ -1469,99 +1367,130 @@ __global__ void calculate_pairwise_interaction_windowed(const double* posx, cons
     }
 }
 
-__global__ void calculate_pairwise_interaction_singlenode(const double* posx, const double* posy, const double* posz,
-                                                            const double* lattice, const int pbc,
-                                                            const int N, const double* sigma, const double* k,
-                                                            const int* charge, double* potential,
-                                                            const int row_start, const int row_end) {
+// __global__ void calculate_pairwise_interaction_indexed(const double* posx, const double* posy, const double*posz, 
+//                                                        const double *lattice, const int pbc, 
+//                                                        const int N, const double *sigma, const double *k, 
+//                                                        const int *charge, double* potential,
+//                                                        const int row_start, const int row_end, const int *cutoff_idx, const int N_cutoff){
 
-    int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
-    int num_threads_total = blockDim.x * gridDim.x;
+//     // Version without reduction, where every thread evaluates a row
+//     int num_threads = blockDim.x;
+//     int blocks_per_row = (N + num_threads - 1) / num_threads;
+//     int block_id = blockIdx.x;
 
-    for (int i = tid_total + row_start; i < row_end; i += num_threads_total) {
-        double local_potential = 0.0;
+//     int row = block_id / blocks_per_row + row_start;
 
-        for (int j = 0; j < N; j++) {
-            if (i != j && charge[j] != 0) {
-                double dist = 1e-10 * site_dist_gpu(posx[i], posy[i], posz[i],
-                                                     posx[j], posy[j], posz[j],
-                                                     lattice[0], lattice[1], lattice[2], pbc);
-                local_potential += v_solve_gpu(dist, charge[j], sigma, k);
-            }
-        }
-
-        atomicAdd(&potential[i], local_potential);
-    }
-}
-
-// __global__ void calculate_pairwise_interaction_singlenode(const double* posx, const double* posy, const double*posz, 
-//                                                                   const double *lattice, const int pbc, 
-//                                                                   const int N, const double *sigma, const double *k, 
-//                                                                   const int *charge, double* potential,
-//                                                                   const int row_start, const int row_end){
-
-//     // Version without reduction, where every thread evaluates a row - NO MPI
-//     int tid_total = blockIdx.x * blockDim.x + threadIdx.x; 
+//     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
 //     int num_threads_total = blockDim.x * gridDim.x;
 
 //     // TODO: switch to reduction
 //     for (int i = tid_total + row_start; i < row_end; i += num_threads_total)
 //     {
-//         for (int j = 0; j < N; j++)
-//         {
-//             double dist = site_dist_gpu(posx[i], posy[i], posz[i], 
-//                                         posx[j], posy[j], posz[j], 
-//                                         lattice[0], lattice[1], lattice[2], pbc);
+//         int j;
 
-//             if (i != j && charge[j] != 0)
-//             {    
+//         for (int j_idx = 0; j_idx < N_cutoff; j_idx++)
+//         {
+//             long int idx_counter = (size_t)i*(size_t)N_cutoff + j_idx;
+//             // j = cutoff_idx[i*N_cutoff + j_idx];
+//             j = cutoff_idx[idx_counter];
+
+//             // if ((i != j) && (charge[j] != 0) && (j != 0)){
+//             if (j >= 0 && i != j && charge[j] != 0) {
+//                 double dist = 1e-10 * site_dist_gpu(posx[i], posy[i], posz[i], 
+//                                             posx[j], posy[j], posz[j], 
+//                                             lattice[0], lattice[1], lattice[2], pbc);
+
+//                 // double dist = (1e-10) * cutoff_dists[i*N_cutoff + j_idx];
 //                 potential[i] += v_solve_gpu(dist, charge[j], sigma, k);
+
 //             }
 //         }
+        
 //     }
 // }
-
 
 __global__ void calculate_pairwise_interaction_indexed(const double* posx, const double* posy, const double*posz, 
                                                        const double *lattice, const int pbc, 
                                                        const int N, const double *sigma, const double *k, 
                                                        const int *charge, double* potential,
-                                                       const int counts_this_rank, const int displ_this_rank, const int *cutoff_idx, const int N_cutoff){
+                                                       const int row_start, const int row_end, const int *cutoff_idx, const int N_cutoff){
 
     // Version without reduction, where every thread evaluates a row
     int num_threads = blockDim.x;
-    // int blocks_per_row = (N + num_threads - 1) / num_threads;
+    int blocks_per_row = (N + num_threads - 1) / num_threads;
     int block_id = blockIdx.x;
 
-    // int row = block_id / blocks_per_row + row_start;
+    int row = block_id / blocks_per_row + row_start;
 
     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads_total = blockDim.x * gridDim.x;
+    
 
-    for (int idx = tid_total; idx < counts_this_rank; idx += num_threads_total)
+    for (int i = tid_total + row_start; i < row_end; i += num_threads_total)
     {
         int j;
         double local_potential = 0.0;
-        int i = idx + displ_this_rank;
 
         for (int j_idx = 0; j_idx < N_cutoff; j_idx++)
         {
-            // long int idx_next = (long int)(i-row_start)*(long int)N_cutoff + (long int)j_idx;
-            long int idx_next = (size_t)idx*(size_t)N_cutoff + (size_t)j_idx;
+            long int idx_next = (size_t)i*(size_t)N_cutoff + (size_t)j_idx;
             j = cutoff_idx[idx_next];
             // j = cutoff_idx[i*N_cutoff + j_idx];
 
-            if (j >= 0 && i != j && charge[j] != 0) {           // the padding in the cutoff list is -1
+            if (j >= 0 && i != j && charge[j] != 0) {
                 double dist = 1e-10 * site_dist_gpu(posx[i], posy[i], posz[i], 
-                                                    posx[j], posy[j], posz[j]);
+                                                    posx[j], posy[j], posz[j], 
+                                                    lattice[0], lattice[1], lattice[2], pbc);
 
                 local_potential += v_solve_gpu(dist, charge[j], sigma, k);
             }
         }
-        potential[i] = local_potential;
+        atomicAdd(&potential[i], local_potential);
     }
     
 }
+
+// __global__ void calculate_pairwise_interaction_indexed(const double* posx, const double* posy, const double*posz, 
+//                                                        const double *lattice, const int pbc, 
+//                                                        const int N, const double *sigma, const double *k, 
+//                                                        const int *charge, double* potential,
+//                                                        const int counts_this_rank, const int displ_this_rank, const int *cutoff_idx, const int N_cutoff){
+
+//     // Version without reduction, where every thread evaluates a row
+//     int num_threads = blockDim.x;
+//     // int blocks_per_row = (N + num_threads - 1) / num_threads;
+//     int block_id = blockIdx.x;
+
+//     // int row = block_id / blocks_per_row + row_start;
+
+//     int tid_total = blockIdx.x * blockDim.x + threadIdx.x;
+//     int num_threads_total = blockDim.x * gridDim.x;
+
+//     for (int idx = tid_total; idx < counts_this_rank; idx += num_threads_total)
+//     {
+//         int j;
+//         double local_potential = 0.0;
+//         int i = idx + displ_this_rank;
+
+//         for (int j_idx = 0; j_idx < N_cutoff; j_idx++)
+//         {
+//             // long int idx_next = (long int)(i-row_start)*(long int)N_cutoff + (long int)j_idx;
+//             long int idx_next = (size_t)idx*(size_t)N_cutoff + (size_t)j_idx;
+//             j = cutoff_idx[idx_next];
+//             // j = cutoff_idx[i*N_cutoff + j_idx];
+
+//             if (j >= 0 && i != j && charge[j] != 0) {           // the padding in the cutoff list is -1
+//                 double dist = 1e-10 * site_dist_gpu(posx[i], posy[i], posz[i], 
+//                                                     posx[j], posy[j], posz[j]);
+
+//                 local_potential += v_solve_gpu(dist, charge[j], sigma, k);
+//             }
+//         }
+//         potential[i] = local_potential;
+//     }
+    
+// }
+
 
 // template <int NTHREADS>
 // __global__ void calculate_pairwise_interaction_indexed(const double* posx, const double* posy, const double* posz,
@@ -1632,24 +1561,42 @@ void poisson_gridless_gpu(const int num_atoms_contact, const int pbc, const int 
     //int num_blocks = blocks_per_row * 1;
 
     // set the inhomogenous poisson solution to zero before populating it
-    // gpuErrchk( hipMemset(site_potential_charge, 0, N * sizeof(double)) ); 
+    gpuErrchk( cudaMemset(site_potential_charge, 0, N * sizeof(double)) ); 
+    gpuErrchk( cudaDeviceSynchronize() );
+
+    auto t1 = std::chrono::steady_clock::now();
+
+    // this num_threads should be equal to NUM_THREADS
 
     // // naive implementation, all-to-all
     // calculate_pairwise_interaction<NUM_THREADS><<<num_blocks, NUM_THREADS, NUM_THREADS * sizeof(double)>>>(posx, posy, posz, lattice,
     //     pbc, N, sigma, k, site_charge, site_potential_charge, displ[rank], displ[rank] + count[rank]);
-    // gpuErrchk( hipPeekAtLastError() );
-    // gpuErrchk( hipDeviceSynchronize() );
-    // gpuErrchk( hipPeekAtLastError() );
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
+    // gpuErrchk( cudaPeekAtLastError() );
 
-    // // only checks sites within an index window
-    // hipLaunchKernelGGL(calculate_pairwise_interaction_windowed, num_blocks, num_threads, 0, 0, posx, posy, posz, lattice,
+    // only checks sites within an index window
+    // calculate_pairwise_interaction_windowed<<<num_blocks, num_threads>>>(posx, posy, posz, lattice,
     //     pbc, N, sigma, k, site_charge, site_potential_charge, displ[rank], displ[rank] + count[rank], cutoff_window);
-    // gpuErrchk( hipPeekAtLastError() );
-    // gpuErrchk( hipDeviceSynchronize() );
-    // gpuErrchk( hipPeekAtLastError() );    
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
+    // gpuErrchk( cudaPeekAtLastError() );
 
-     // only checks sites which were precomputed to be within the cutoff radius
-    hipLaunchKernelGGL(calculate_pairwise_interaction_indexed, num_blocks, num_threads, 0, 0, posx, posy, posz, lattice,
-        pbc, N, sigma, k, site_charge, site_potential_charge, count[rank], displ[rank], cutoff_idx, N_cutoff);
 
+    // row-wise: only checks sites which were precomputed to be within the cutoff radius
+    calculate_pairwise_interaction_indexed<<<num_blocks, num_threads>>>(posx, posy, posz, lattice,
+        pbc, N, sigma, k, site_charge, site_potential_charge, displ[rank], displ[rank] + count[rank], cutoff_idx, N_cutoff);
+    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchk( cudaPeekAtLastError() );
+
+
+
+    // double* host_site_potential_charge = new double[N];
+    // cudaMemcpy(host_site_potential_charge, site_potential_charge, N * sizeof(double), cudaMemcpyDeviceToHost);
+    // double sum = 0.0;
+    // for (int i = 0; i < N; ++i) {
+    //     sum += host_site_potential_charge[i];
+    // }
+    // std::cout << "Sum of site_potential_charge: " << sum << std::endl;
+    // exit(1);
 }

@@ -14,12 +14,21 @@
 #endif
 
 
-KMCProcess::KMCProcess(Device &device, double _freq)
+KMCProcess::KMCProcess(Device &device, double _freq, double reservoir_layer_start)
 {
 
     // initialize random number generator
     random_generator.setSeed(rnd_seed_kmc);
     this->freq = _freq;
+
+    // modify the start_x and end_x according to the oxide thickness
+    double interface_width = 4.5; // [Angstrom]
+
+    // accounting for the different oxide thickness samples:
+    layer_3_start_x = reservoir_layer_start - interface_width;
+    layer_2_end_x = layer_3_start_x;
+    layer_3_end_x = reservoir_layer_start;
+    layer_4_start_x = reservoir_layer_start;
 
     // intialize device layers
     int layerID;
@@ -44,6 +53,13 @@ KMCProcess::KMCProcess(Device &device, double _freq)
         if (layerID == 1000)
         {
             print("Site #" << i << " is not inside the device!");
+            std::cout << device.site_x[i] << std::endl;
+            std::cout << "layer 0: " << layers[0].start_x << " - " << layers[0].end_x << std::endl;
+            std::cout << "layer 1: " << layers[1].start_x << " - " << layers[1].end_x << std::endl;
+            std::cout << "layer 2: " << layers[2].start_x << " - " << layers[2].end_x << std::endl;
+            std::cout << "layer 3: " << layers[3].start_x << " - " << layers[3].end_x << std::endl;
+            std::cout << "layer 4: " << layers[4].start_x << " - " << layers[4].end_x << std::endl;
+
             abort();
         }
         site_layer.push_back(layerID);
@@ -58,131 +74,128 @@ KMCProcess::KMCProcess(Device &device, double _freq)
         affected_neighborhood[i] = i;
     }
 
-    // initialize the size of the event list:
-    // event_types = new EVENTTYPE[device.N * device.max_num_neighbors];
-    // update_event_types(device);
 }
 
 
-// void KMCProcess::update_events_and_rates(Device &device, EVENTTYPE *event_type, double *event_prob)
-// {
+void KMCProcess::update_events_and_rates(Device &device, EVENTTYPE *event_type, double *event_prob)
+{
     
-//     int num_sites = device.N;
-//     int num_neigh = device.max_num_neighbors;
+    int num_sites = device.N;
+    int num_neigh = device.max_num_neighbors;
 
-//     // iterates through all possible site-neighbor pairs
-//     #pragma omp parallel for
-//     for (auto idx = 0; idx < num_sites * num_neigh; ++idx) {
+    // iterates through all possible site-neighbor pairs
+    #pragma omp parallel for
+    for (auto idx = 0; idx < num_sites * num_neigh; ++idx) {
 
-//         EVENTTYPE event_type_ = NULL_EVENT;
-//         double P = 0;
+        EVENTTYPE event_type_ = NULL_EVENT;
+        double P = 0;
 
-//         // site-neighbor pair indicies for this element of neigh_idx
-//         int i = std::floor(idx / num_neigh);
-//         auto j = device.neigh_idx[idx]; 
+        // site-neighbor pair indicies for this element of neigh_idx
+        int i = std::floor(idx / num_neigh);
+        auto j = device.neigh_idx[idx]; 
 
-//         // j is -1 if there is no neighbor at this position
-//         if (j >= 0 && j < num_sites) { 
+        // j is -1 if there is no neighbor at this position
+        if (j >= 0 && j < num_sites) { 
 
-//             double r_dist = (1e-10) * site_dist(device.site_x[i], device.site_y[i], device.site_z[i], 
-//                                                 device.site_x[j], device.site_y[j], device.site_z[j], 
-//                                                 device.lattice, device.pbc);                                    // [m]
+            double r_dist = (1e-10) * site_dist(device.site_x[i], device.site_y[i], device.site_z[i], 
+                                                device.site_x[j], device.site_y[j], device.site_z[j], 
+                                                device.lattice, device.pbc);                                    // [m]
 
-//             // Generation
-//             if (device.site_element[i] == DEFECT && device.site_element[j] == O_EL)
-//             {
+            // Generation
+            if (device.site_element[i] == DEFECT && device.site_element[j] == O_EL)
+            {
 
-//                 double E = 2 * ((device.site_potential_boundary[i] + device.site_potential_charge[i]) 
-//                               - (device.site_potential_boundary[j] + device.site_potential_charge[j]));
-//                 double zero_field_energy = layers[site_layer[j]].E_gen_0;
-//                 event_type_ = VACANCY_GENERATION;
-//                 double Ekin = 0; //kB * (device.site_temperature[j] - device.T_bg); //double Ekin = kB * (device.site_temperature[j] - device.site_temperature[i]);
-//                 double EA = zero_field_energy - E - Ekin;
-//                 P = exp(-1 * EA / (kB * device.T_bg)) * freq;
-//             }
+                double E = 2 * ((device.site_potential_boundary[i] + device.site_potential_charge[i]) 
+                              - (device.site_potential_boundary[j] + device.site_potential_charge[j]));
+                double zero_field_energy = layers[site_layer[j]].E_gen_0;
+                event_type_ = VACANCY_GENERATION;
+                double Ekin = 0; //kB * (device.site_temperature[j] - device.T_bg); //double Ekin = kB * (device.site_temperature[j] - device.site_temperature[i]);
+                double EA = zero_field_energy - E - Ekin;
+                P = exp(-1 * EA / (kB * device.T_bg)) * freq;
+            }
 
-//             // Recombination
-//             if (device.site_element[i] == OXYGEN_DEFECT && device.site_element[j] == VACANCY) // ELSE IF
-//             {
-//                 int charge_abs = 2;
-//                 double self_int_V = v_solve(r_dist, charge_abs, device.sigma, device.k, q);
+            // Recombination
+            if (device.site_element[i] == OXYGEN_DEFECT && device.site_element[j] == VACANCY) // ELSE IF
+            {
+                int charge_abs = 2;
+                double self_int_V = v_solve(r_dist, charge_abs, device.sigma, device.k, q);
 
-//                 int charge_state = device.site_charge[i] - device.site_charge[j];
-//                 double E = charge_state * ((device.site_potential_boundary[i] + device.site_potential_charge[i]) 
-//                                          - (device.site_potential_boundary[j] + device.site_potential_charge[j]) + (charge_state / 2) * self_int_V);
-//                 double zero_field_energy = layers[site_layer[j]].E_rec_1;
+                int charge_state = device.site_charge[i] - device.site_charge[j];
+                double E = charge_state * ((device.site_potential_boundary[i] + device.site_potential_charge[i]) 
+                                         - (device.site_potential_boundary[j] + device.site_potential_charge[j]) + (charge_state / 2) * self_int_V);
+                double zero_field_energy = layers[site_layer[j]].E_rec_1;
 
-//                 event_type_ = VACANCY_RECOMBINATION;
-//                 double Ekin = 0; //kB * (device.site_temperature[i] - device.T_bg); //double Ekin = kB * (device.site_temperature[i] - device.site_temperature[j]);
-//                 double EA = zero_field_energy - E - Ekin;
-//                 P = exp(-1 * EA / (kB * device.T_bg)) * freq;
-//             }
+                event_type_ = VACANCY_RECOMBINATION;
+                double Ekin = 0; //kB * (device.site_temperature[i] - device.T_bg); //double Ekin = kB * (device.site_temperature[i] - device.site_temperature[j]);
+                double EA = zero_field_energy - E - Ekin;
+                P = exp(-1 * EA / (kB * device.T_bg)) * freq;
+            }
 
-//             // Vacancy diffusion
-//             if (device.site_element[i] == VACANCY && device.site_element[j] == O_EL)
-//             {
+            // Vacancy diffusion
+            if (device.site_element[i] == VACANCY && device.site_element[j] == O_EL)
+            {
 
-//                 double self_int_V = 0.0;
-//                 if (device.site_charge[i] != 0)
-//                 {
-//                     self_int_V = v_solve(r_dist, device.site_charge[i], device.sigma, device.k, q);
-//                 }
+                double self_int_V = 0.0;
+                if (device.site_charge[i] != 0)
+                {
+                    self_int_V = v_solve(r_dist, device.site_charge[i], device.sigma, device.k, q);
+                }
 
-//                 event_type_ = VACANCY_DIFFUSION;
-//                 double E = (device.site_charge[i] - device.site_charge[j]) * ((device.site_potential_boundary[i] + device.site_potential_charge[i]) 
-//                                                                             - (device.site_potential_boundary[j] + device.site_potential_charge[j]) + self_int_V);
-//                 double zero_field_energy = layers[site_layer[i]].E_diff_2;
-//                 double Ekin = 0; //kB * (device.site_temperature[i] - device.T_bg); //kB * (device.site_temperature[j] - device.site_temperature[i]);
-//                 double EA = zero_field_energy - E - Ekin;
-//                 // std::cout << "energy for moving this vacancy: " << EA << " : " << zero_field_energy << "\n";
-//                 P = exp(-1 * EA / (kB * device.T_bg)) * freq;
-//             }
+                event_type_ = VACANCY_DIFFUSION;
+                double E = (device.site_charge[i] - device.site_charge[j]) * ((device.site_potential_boundary[i] + device.site_potential_charge[i]) 
+                                                                            - (device.site_potential_boundary[j] + device.site_potential_charge[j]) + self_int_V);
+                double zero_field_energy = layers[site_layer[i]].E_diff_2;
+                double Ekin = 0; //kB * (device.site_temperature[i] - device.T_bg); //kB * (device.site_temperature[j] - device.site_temperature[i]);
+                double EA = zero_field_energy - E - Ekin;
+                // std::cout << "energy for moving this vacancy: " << EA << " : " << zero_field_energy << "\n";
+                P = exp(-1 * EA / (kB * device.T_bg)) * freq;
+            }
 
-//             // Ion diffusion
-//             if (device.site_element[i] == OXYGEN_DEFECT && device.site_element[j] == DEFECT) 
-//             {
-//                 int charge_abs = 2;
-//                 double self_int_V = 0.0;
-//                 if (device.site_charge[i] != 0)
-//                 {
-//                     self_int_V = v_solve(r_dist, charge_abs, device.sigma, device.k, q);
-//                 }
-//                 double E = (device.site_charge[i] - device.site_charge[j]) * ((device.site_potential_boundary[i] + device.site_potential_charge[i]) 
-//                                                                             - (device.site_potential_boundary[j] + device.site_potential_charge[j])- self_int_V);
-//                 double zero_field_energy = layers[site_layer[j]].E_diff_3;
+            // Ion diffusion
+            if (device.site_element[i] == OXYGEN_DEFECT && device.site_element[j] == DEFECT) 
+            {
+                int charge_abs = 2;
+                double self_int_V = 0.0;
+                if (device.site_charge[i] != 0)
+                {
+                    self_int_V = v_solve(r_dist, charge_abs, device.sigma, device.k, q);
+                }
+                double E = (device.site_charge[i] - device.site_charge[j]) * ((device.site_potential_boundary[i] + device.site_potential_charge[i]) 
+                                                                            - (device.site_potential_boundary[j] + device.site_potential_charge[j])- self_int_V);
+                double zero_field_energy = layers[site_layer[j]].E_diff_3;
 
-//                 event_type_ = ION_DIFFUSION;
+                event_type_ = ION_DIFFUSION;
 
-//                 double Ekin = 0; //kB * (device.site_temperature[i] - device.T_bg); //kB * (device.site_temperature[i] - device.site_temperature[j]);
-//                 double EA = zero_field_energy - E - Ekin;
-//                 P = exp(-1 * EA / (kB * device.T_bg)) * freq;
-//             }
-//         }
-//         event_type[idx] = event_type_;
-//         event_prob[idx] = P;
-//     }
-// }
+                double Ekin = 0; //kB * (device.site_temperature[i] - device.T_bg); //kB * (device.site_temperature[i] - device.site_temperature[j]);
+                double EA = zero_field_energy - E - Ekin;
+                P = exp(-1 * EA / (kB * device.T_bg)) * freq;
+            }
+        }
+        event_type[idx] = event_type_;
+        event_prob[idx] = P;
+    }
+}
 
-// void KMCProcess::update_affected_neighborhood(int event_idx, Device &device)
-// {
+void KMCProcess::update_affected_neighborhood(int event_idx, Device &device)
+{
 
-//     int i = std::floor(event_idx / device.max_num_neighbors);
-//     int j = device.neigh_idx[event_idx];
+    int i = std::floor(event_idx / device.max_num_neighbors);
+    int j = device.neigh_idx[event_idx];
 
-//     for (auto nn = 0; nn < device.max_num_neighbors; ++nn){
-//         this->affected_neighborhood.push_back(i * device.max_num_neighbors + nn);
-//         this->affected_neighborhood.push_back(j * device.max_num_neighbors + nn);
-//     }
+    for (auto nn = 0; nn < device.max_num_neighbors; ++nn){
+        this->affected_neighborhood.push_back(i * device.max_num_neighbors + nn);
+        this->affected_neighborhood.push_back(j * device.max_num_neighbors + nn);
+    }
 
-//     for (auto idx = 0; idx < device.N * device.max_num_neighbors; ++idx){
-//         int i_ = std::floor(idx / device.max_num_neighbors);
-//         int j_ = device.neigh_idx[idx];
+    for (auto idx = 0; idx < device.N * device.max_num_neighbors; ++idx){
+        int i_ = std::floor(idx / device.max_num_neighbors);
+        int j_ = device.neigh_idx[idx];
 
-//         if (i == i_ || j == j_ || i == j_ || j == i_){
-//             this->affected_neighborhood.push_back(idx);
-//         }
-//     }
-// }
+        if (i == i_ || j == j_ || i == j_ || j == i_){
+            this->affected_neighborhood.push_back(idx);
+        }
+    }
+}
 
 void KMCProcess::execute_event(Device &device, EVENTTYPE sel_event_type, int i, int j)
 {
@@ -256,137 +269,135 @@ void KMCProcess::execute_event(Device &device, EVENTTYPE sel_event_type, int i, 
 }
 
 
-// std::map<std::string, double> KMCProcess::executeKMCStep(GPUBuffers gpubuf, Device &device, double *step_time)
-// {
-//     std::map<std::string, double> result;
+std::map<std::string, double> KMCProcess::executeKMCStep(GPUBuffers gpubuf, Device &device, double *step_time)
+{
+    std::map<std::string, double> result;
 
-// #ifdef USE_CUDA
+#ifdef USE_CUDA
 
-//     MPI_Barrier(gpubuf.comm);
-//     auto t0 = std::chrono::steady_clock::now();
+    auto t0 = std::chrono::steady_clock::now();
 
-//     // gpubuf.sync_HostToGPU(device); // remove once full while loop is completed
+    // gpubuf.sync_HostToGPU(device); // remove once full while loop is completed
 
-//     // double event_time = execute_kmc_step_gpu(device.N, device.max_num_neighbors, gpubuf.neigh_idx, gpubuf.site_layer,
-//     //                                          gpubuf.lattice, device.pbc, gpubuf.T_bg, 
-//     //                                          gpubuf.freq, gpubuf.sigma, gpubuf.k,
-//     //                                          gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, 
-//     //                                          gpubuf.site_potential_charge, gpubuf.site_temperature,
-//     //                                          gpubuf.site_element, gpubuf.site_charge, random_generator, device.neigh_idx.data());
+    // double event_time = execute_kmc_step_gpu(device.N, device.max_num_neighbors, gpubuf.neigh_idx, gpubuf.site_layer,
+    //                                          gpubuf.lattice, device.pbc, gpubuf.T_bg, 
+    //                                          gpubuf.freq, gpubuf.sigma, gpubuf.k,
+    //                                          gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, 
+    //                                          gpubuf.site_potential_charge, gpubuf.site_temperature,
+    //                                          gpubuf.site_element, gpubuf.site_charge, random_generator, device.neigh_idx.data());
 
-//     double event_time = execute_kmc_step_mpi(
-//                                             gpubuf.comm,
-//                                             device.N,
-//                                             gpubuf.count_sites,
-//                                             gpubuf.displ_sites,
-//                                             device.max_num_neighbors, gpubuf.neigh_idx, gpubuf.site_layer,
-//                                             gpubuf.lattice, device.pbc, gpubuf.T_bg, 
-//                                             gpubuf.freq, gpubuf.sigma, gpubuf.k,
-//                                             gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, 
-//                                             gpubuf.site_potential_charge, gpubuf.site_temperature,
-//                                             gpubuf.site_element, gpubuf.site_charge, random_generator, device.neigh_idx.data());
-
+    double event_time = execute_kmc_step_mpi(
+                                            gpubuf.comm,
+                                            device.N,
+                                            gpubuf.count_sites,
+                                            gpubuf.displ_sites,
+                                            device.max_num_neighbors, gpubuf.neigh_idx, gpubuf.site_layer,
+                                            gpubuf.lattice, device.pbc, gpubuf.T_bg, 
+                                            gpubuf.freq, gpubuf.sigma, gpubuf.k,
+                                            gpubuf.site_x, gpubuf.site_y, gpubuf.site_z, 
+                                            gpubuf.site_potential_charge, gpubuf.site_temperature,
+                                            gpubuf.site_element, gpubuf.site_charge, random_generator, device.neigh_idx.data());
 
 
-//     // gpubuf.sync_GPUToHost(device); // remove once full while loop is completed
 
-//     auto t1 = std::chrono::steady_clock::now();
-//     std::chrono::duration<double> dt = t1 - t0;
+    // gpubuf.sync_GPUToHost(device); // remove once full while loop is completed
 
-// #else
-//     MPI_Barrier(gpubuf.comm);
-//     auto t0 = std::chrono::steady_clock::now();
+    auto t1 = std::chrono::steady_clock::now();
+    std::chrono::duration<double> dt = t1 - t0;
 
-//     int num_sites = device.N;
-//     int num_neigh = device.max_num_neighbors;
+#else
+    auto t0 = std::chrono::steady_clock::now();
 
-//     EVENTTYPE *event_type = new EVENTTYPE[num_sites * num_neigh];
-//     double    *event_prob = new    double[num_sites * num_neigh];
-//     double    *event_prob_cum = new double[num_sites * num_neigh];
+    int num_sites = device.N;
+    int num_neigh = device.max_num_neighbors;
 
-//     // ** Build the event and rate lists **
+    EVENTTYPE *event_type = new EVENTTYPE[num_sites * num_neigh];
+    double    *event_prob = new    double[num_sites * num_neigh];
+    double    *event_prob_cum = new double[num_sites * num_neigh];
 
-//     // update_event_types(device);
-//     // update_rates(device, event_prob);
-//     update_events_and_rates(device, event_type, event_prob);
+    // ** Build the event and rate lists **
 
-//     // reset the affected neighborhood for the next events
-//     this->affected_neighborhood.clear();
+    // update_event_types(device);
+    // update_rates(device, event_prob);
+    update_events_and_rates(device, event_type, event_prob);
+
+    // reset the affected neighborhood for the next events
+    this->affected_neighborhood.clear();
    
-//     // ** Event execution loop **
+    // ** Event execution loop **
 
-//     double event_time = 0.0;
-//     while (event_time < 1 / freq) {
+    double event_time = 0.0;
+    while (event_time < 1 / freq) {
 
-//         // get the cumulative sum of the probabilities
-//         inclusive_prefix_sum<double>(event_prob, event_prob_cum, num_sites * num_neigh);
+        // get the cumulative sum of the probabilities
+        inclusive_prefix_sum<double>(event_prob, event_prob_cum, num_sites * num_neigh);
 
-//         // Select an event
-//         double Psum = event_prob_cum[num_sites * num_neigh - 1];
-//         double number = random_generator.getRandomNumber() * Psum;
-//         int event_idx = std::upper_bound(event_prob_cum, event_prob_cum + num_sites * num_neigh, number) - event_prob_cum;
-//         double sel_event_prob = event_prob_cum[event_idx];
-//         EVENTTYPE sel_event_type = event_type[event_idx];
+        // Select an event
+        double Psum = event_prob_cum[num_sites * num_neigh - 1];
+        double number = random_generator.getRandomNumber() * Psum;
+        int event_idx = std::upper_bound(event_prob_cum, event_prob_cum + num_sites * num_neigh, number) - event_prob_cum;
+        double sel_event_prob = event_prob_cum[event_idx];
+        EVENTTYPE sel_event_type = event_type[event_idx];
 
-//         // find the site-neighbor pair corresponding to this event
-//         int i = std::floor(event_idx / num_neigh);
-//         int j = device.neigh_idx[event_idx];
+        // find the site-neighbor pair corresponding to this event
+        int i = std::floor(event_idx / num_neigh);
+        int j = device.neigh_idx[event_idx];
 
-//         // std::cout << "selected " << number << " in [" << event_prob_cum[0] << ", " << Psum << "]" << std::endl;
-//         // std::cout << "Selected event index: " << event_idx << " with type "
-//         //          << event_type[event_idx] << " and probability " << event_prob[event_idx]
-//         //          << " (" << sel_event_prob << ")" << " to happen between " << return_element(device.site_element[i])
-//         //          << " and " << return_element(device.site_element[j]) << std::endl;
+        // std::cout << "selected " << number << " in [" << event_prob_cum[0] << ", " << Psum << "]" << std::endl;
+        // std::cout << "Selected event index: " << event_idx << " with type "
+        //          << event_type[event_idx] << " and probability " << event_prob[event_idx]
+        //          << " (" << sel_event_prob << ")" << " to happen between " << return_element(device.site_element[i])
+        //          << " and " << return_element(device.site_element[j]) << std::endl;
 
-//         execute_event(device, sel_event_type, i, j);
+        execute_event(device, sel_event_type, i, j);
 
-//         // ** Deactivate conflicting events **
+        // ** Deactivate conflicting events **
 
-//         int i_, j_;
-// #pragma omp parallel private(i_, j_)
-// {
-//         // other site's events with i or j
-//         #pragma omp for
-//         for (auto idx = 0; idx < num_sites * num_neigh; ++idx){
-//             i_ = std::floor(idx / num_neigh);
-//             j_ = device.neigh_idx[idx];
+        int i_, j_;
+#pragma omp parallel private(i_, j_)
+{
+        // other site's events with i or j
+        #pragma omp for
+        for (auto idx = 0; idx < num_sites * num_neigh; ++idx){
+            i_ = std::floor(idx / num_neigh);
+            j_ = device.neigh_idx[idx];
 
-//             if (i == i_ || j == j_ || i == j_ || j == i_){
-//                 event_type[idx] = NULL_EVENT;
-//                 event_prob[idx] = 0.0;
-//             }
-//         }
+            if (i == i_ || j == j_ || i == j_ || j == i_){
+                event_type[idx] = NULL_EVENT;
+                event_prob[idx] = 0.0;
+            }
+        }
 
-//         // i's  and j's events with their neighbors
-//         #pragma omp for
-//         for (auto nn = 0; nn < num_neigh; ++nn){
-//             event_type[i * num_neigh + nn] = NULL_EVENT;
-//             event_type[j * num_neigh + nn] = NULL_EVENT;
-//             event_prob[i * num_neigh + nn] = 0.0;
-//             event_prob[j * num_neigh + nn] = 0.0;
-//         }
-// }
-//         // update event time based on the sum of all rates
-//         event_time = -log(random_generator.getRandomNumber()) / Psum;
+        // i's  and j's events with their neighbors
+        #pragma omp for
+        for (auto nn = 0; nn < num_neigh; ++nn){
+            event_type[i * num_neigh + nn] = NULL_EVENT;
+            event_type[j * num_neigh + nn] = NULL_EVENT;
+            event_prob[i * num_neigh + nn] = 0.0;
+            event_prob[j * num_neigh + nn] = 0.0;
+        }
+}
+        // update event time based on the sum of all rates
+        event_time = -log(random_generator.getRandomNumber()) / Psum;
 
-//         // collect the affected neighborhood
-//         update_affected_neighborhood(event_idx, device);
-//     }
+        // collect the affected neighborhood
+        update_affected_neighborhood(event_idx, device);
+    }
 
-//     delete[] event_prob;
-//     delete[] event_prob_cum;
-//     delete[] event_type;
-//     auto t1 = std::chrono::steady_clock::now();
-//     std::chrono::duration<double> dt = t1 - t0;
+    delete[] event_prob;
+    delete[] event_prob_cum;
+    delete[] event_type;
+    auto t1 = std::chrono::steady_clock::now();
+    std::chrono::duration<double> dt = t1 - t0;
 
-// #endif
+#endif
 
-//     // update the kmc time
-//     *step_time = event_time;
+    // update the kmc time
+    *step_time = event_time;
     
-//     result["Z - calculation time - kmc events [s]"] = dt.count();
-//     return result;
-// }
+    result["Z - calculation time - kmc events [s]"] = dt.count();
+    return result;
+}
 
 
 // // builds the list of event types

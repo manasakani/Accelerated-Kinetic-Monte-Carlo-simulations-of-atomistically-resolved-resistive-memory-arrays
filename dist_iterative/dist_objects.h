@@ -1,12 +1,11 @@
 #pragma once
 #include <mpi.h>
-#include <hip/hip_runtime.h>
-#include <hip/hip_runtime.h>
-#include <hipsparse.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <cusparse.h>
 #include <iostream>
 #include "cudaerrchk.h"
 #include <unistd.h>
-#include <rocsparse.h>
 
 class Distributed_vector{
     public:
@@ -22,7 +21,7 @@ class Distributed_vector{
 
         double **vec_h;
         double **vec_d;
-        rocsparse_dnvec_descr *descriptors;
+        cusparseDnVecDescr_t *descriptors;
 
     Distributed_vector(
         int matrix_size,
@@ -41,24 +40,8 @@ struct Distributed_subblock{
     int subblock_size;
     int *count_subblock_h;
     int *displ_subblock_h;
-    hipStream_t *streams_recv_subblock;
-    hipEvent_t *events_recv_subblock;
-    MPI_Request *send_subblock_requests;
-    MPI_Request *recv_subblock_requests;
-};
-
-
-struct Distributed_subblock_sparse{
-    int *subblock_indices_local_d;
-    rocsparse_spmat_descr *descriptor;
-    rocsparse_spmv_alg algo;
-    size_t *buffersize;
-    double *buffer_d;
-    int subblock_size;
-    int *count_subblock_h;
-    int *displ_subblock_h;
-    hipStream_t *streams_recv_subblock;
-    hipEvent_t *events_recv_subblock;
+    cudaStream_t *streams_recv_subblock;
+    cudaEvent_t *events_recv_subblock;
     MPI_Request *send_subblock_requests;
     MPI_Request *recv_subblock_requests;
 };
@@ -98,12 +81,7 @@ class Distributed_matrix{
         double **data_d;
         int **col_indices_d;
         int **row_ptr_d;
-        rocsparse_spmat_descr *descriptors;
-        // rocsparse_spmv_alg algo;
-        rocsparse_spmv_alg *algos_generic;
-
-        rocsparse_mat_info *infos_low;
-        rocsparse_mat_descr *descr_low;
+        cusparseSpMatDescr_t *descriptors;
 
         // Data types for MPI
         // assumes symmetric matrix
@@ -134,37 +112,12 @@ class Distributed_matrix{
         MPI_Request *send_requests;
         MPI_Request *recv_requests;
         // MPI streams and events
-        hipStream_t *streams_recv;
-        hipStream_t *streams_send;
-        hipEvent_t *events_recv;
-        hipEvent_t *events_send;
+        cudaStream_t *streams_recv;
+        cudaStream_t *streams_send;
+        cudaEvent_t *events_recv;
+        cudaEvent_t *events_send;
 
-        hipEvent_t event_default_finished;
-
-        // initialize cuda
-        hipStream_t default_stream;
-        hipblasHandle_t default_cublasHandle;
-        hipsparseHandle_t default_cusparseHandle;
-        rocsparse_handle default_rocsparseHandle;
-        double *Ap_local_d;
-        rocsparse_dnvec_descr vecAp_local;
-        double *z_local_d;
-
-        int step_count;
-
-    // construct the distributed matrix
-    // input is the whol count[rank] * matrix size
-    // csr part of the matrix
-    Distributed_matrix(
-        int matrix_size,
-        int nnz,
-        int *counts,
-        int *displacements,
-        int *col_indices_in,
-        int *row_ptr_in,
-        double *data_in,
-        rocsparse_spmv_alg *algos,
-        MPI_Comm comm);
+        cudaEvent_t event_default_finished;
 
     // construct the distributed matrix
     // input is correctly split
@@ -178,7 +131,6 @@ class Distributed_matrix{
         int **col_indices_in_d,
         int **row_ptr_in_d,
         int *nnz_per_neighbour_in,
-        rocsparse_spmv_alg *algos,
         MPI_Comm comm);
 
 
@@ -204,30 +156,15 @@ class Distributed_matrix{
             double *data_in
         );
 
-        
-        void construct_nnz_cols_per_neighbour();
-
-        void construct_nnz_rows_per_neighbour();
-        
 
         void construct_rows_per_neighbour();
 
         void construct_cols_per_neighbour(); 
 
-        void check_sorted();
-
-        void construct_mpi_data_types();
-
         void create_events_streams();
 
         void create_host_memory();
 
-        void create_device_memory();
-
-        void prepare_spmv(rocsparse_spmv_alg *algos);
-
-        void create_cg_overhead();
-
-        void destroy_cg_overhead();
+        void create_device_memory(cusparseHandle_t &cusparseHandle);
 
 };

@@ -8,6 +8,7 @@ Distributed_vector::Distributed_vector(
     int *neighbours,
     MPI_Comm comm
 ){
+    std::cout << "Constructing distributed vector" << std::endl;
     MPI_Comm_size(comm, &size);
     MPI_Comm_rank(comm, &rank);
     this->matrix_size = matrix_size;
@@ -26,19 +27,19 @@ Distributed_vector::Distributed_vector(
     }
     vec_h = new double*[number_of_neighbours];
     vec_d = new double*[number_of_neighbours];
-    descriptors = new rocsparse_dnvec_descr[number_of_neighbours];
+    descriptors = new cusparseDnVecDescr_t[number_of_neighbours];
     for(int k = 0; k < number_of_neighbours; k++){
         int neighbour_idx = neighbours[k];
-        cudaErrchk(hipHostMalloc(&vec_h[k], counts[neighbour_idx]*sizeof(double)));
+        cudaErrchk(cudaMallocHost(&vec_h[k], counts[neighbour_idx]*sizeof(double)));
         for(int i = 0; i < counts[neighbour_idx]; i++){
             vec_h[k][i] = 0.0;
         }
-        cudaErrchk(hipMalloc(&vec_d[k], counts[neighbour_idx]*sizeof(double)));
-        cudaErrchk(hipMemset(vec_d[k], 0, counts[neighbour_idx]*sizeof(double)));
-        rocsparse_create_dnvec_descr(
-            &descriptors[k], counts[neighbour_idx], vec_d[k], rocsparse_datatype_f64_r);
+        cudaErrchk(cudaMalloc(&vec_d[k], counts[neighbour_idx]*sizeof(double)));
+        cudaErrchk(cudaMemset(vec_d[k], 0, counts[neighbour_idx]*sizeof(double)));
+        cusparseErrchk(cusparseCreateDnVec(&descriptors[k], counts[neighbour_idx], vec_d[k], CUDA_R_64F));
 
     }
+    std::cout << "Done constructing distributed vector" << std::endl;
 }
 
 Distributed_vector::~Distributed_vector(){
@@ -46,9 +47,9 @@ Distributed_vector::~Distributed_vector(){
     delete[] displacements;
     delete[] neighbours;
     for(int k = 0; k < number_of_neighbours; k++){
-        cudaErrchk(hipHostFree(vec_h[k]));
-        cudaErrchk(hipFree(vec_d[k]));
-        rocsparse_destroy_dnvec_descr(descriptors[k]);
+        cudaErrchk(cudaFreeHost(vec_h[k]));
+        cudaErrchk(cudaFree(vec_d[k]));
+        cusparseErrchk(cusparseDestroyDnVec(descriptors[k]));
     }
     delete[] vec_h;
     delete[] vec_d;

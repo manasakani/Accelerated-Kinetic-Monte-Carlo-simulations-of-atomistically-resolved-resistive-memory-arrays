@@ -13,7 +13,9 @@
 #include <chrono>
 #include <iomanip>
 
-#include "gpu_solvers.h"
+#ifdef USE_CUDA
+    #include "gpu_solvers.h"
+#endif
 
 // #include <mpi.h>
 
@@ -68,6 +70,7 @@ public:
     int max_num_neighbors = 0;                          // maximum number of neighbors per site
     int N_cutoff = 0;                                   // number of other potentially-charged sites within the cutoff radius
     double nn_dist;                                     // neighbor distance
+    double event_dist;                                  // event distance   
     double sigma;                                       // gaussian width for potential solver
     double k;                                           //
     double T_bg;                                        // global background temperature
@@ -76,18 +79,17 @@ public:
     double imacro = 0.0;                                // macroscopic current
 
     // Neighbor lists:
-    // Graph site_neighbors;                               // list of neighbors of each site (including defects)
-    // std::vector<int> neigh_idx;                         // neighbors for the event list setup
-    // std::vector<int> cutoff_window;                     // Nx2 array of start and end indices for other sites within the cutoff radius
-    // std::vector<int> cutoff_idx;                        // Nxx array of all other potential point defects within the cutoff radius of i
-    // std::vector<double> cutoff_dists;                   // Nxx array of distances to all other potential point defects within the cutoff radius of i
+    Graph site_neighbors;                               // list of neighbors of each site (including defects)
+    std::vector<int> neigh_idx;                         // neighbors for the event list setup
+    std::vector<int> cutoff_window;                     // Nx2 array of start and end indices for other sites within the cutoff radius
+    std::vector<int> cutoff_idx;                        // Nxx array of all other potential point defects within the cutoff radius of i
 
     // Site attributes:
     std::vector<double> site_x;
     std::vector<double> site_y;
     std::vector<double> site_z;
     std::vector<ELEMENT> site_element;
-    std::vector<int> site_is_metal;                     // acts as a bool
+    // std::vector<int> site_is_metal;                     // acts as a bool
 
     // Atom attributes:
     std::vector<double> atom_x;
@@ -109,18 +111,17 @@ public:
     // re-usable matrices
     std::vector<double> laplacian;                      // laplacian matrix
     std::vector<double> laplacian_ss;                   // steady state laplacian
-    std::vector<double> index_mapping;                  // index mappped
 
 private:
 
-    int N_interface = 0;
+    int N_center = 0;
     RandomNumberGenerator random_generator;             // random number generator object for this device
     double kB = 8.617333262e-5;                         // [eV/K]
     double q = 1.60217663e-19;                          // [C]
     double h_bar_sq = 4.3957e-67;                       // [(Js)^2]
     double m_0 = 9.11e-31;                              // [kg]
     double eV_to_J = 1.6e-19;                           // [C]
-    const double T_1 = 50;                              // [K] Normalization T_1 < background_temperature!!!
+    const double T_1 = 50; //50;                        // [K] Normalization T_1 < background_temperature!!!
 
 
     //************************************
@@ -151,22 +152,22 @@ private:
     //**************************************************
 
     // Solve the Laplace equation to get the CB edge along the device
-    public: void setLaplacePotential(hipblasHandle_t handle_cublas, hipsolverHandle_t handle_cusolver, GPUBuffers gpubuf, 
+    public: void setLaplacePotential(cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, GPUBuffers gpubuf, 
                                      KMCParameters &p, double Vd);
 
     // update the charge of each vacancy and ion
     public: std::map<std::string, double> updateCharge(GPUBuffers gpubuf, std::vector<ELEMENT> metals);
 
-    // // update the potential of each site with a cpu/gpu hybrid scheme
-    // public: std::map<std::string, double> updatePotential_hybrid(hipblasHandle_t handle_cublas, hipsolverHandle_t handle_cusolver, 
-    //                                                                      GPUBuffers &gpubuf, KMCParameters &p, double Vd, int kmc_step_count);
+    // update the potential of each site with a cpu/gpu hybrid scheme
+    public: std::map<std::string, double> updatePotential_hybrid(cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, 
+                                                                         GPUBuffers &gpubuf, KMCParameters &p, double Vd, int kmc_step_count);
 
     // update the potential of each site
-    public: std::map<std::string, double> updatePotential(hipblasHandle_t handle_cublas, hipsolverHandle_t handle_cusolver, 
+    public: std::map<std::string, double> updatePotential(cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, 
                                                           GPUBuffers &gpubuf, KMCParameters &p, double Vd, int kmc_step_count);
     
     // resistive-network solver for the background potential
-    private: void background_potential(hipsolverHandle_t handle, int num_atoms_contact, double Vd, std::vector<double> lattice,
+    private: void background_potential(cusolverDnHandle_t handle, int num_atoms_contact, double Vd, std::vector<double> lattice,
                                        double G_coeff, double high_G, double low_G, std::vector<ELEMENT> metals, int kmc_step_num);
 
     // n-body poisson solver for the charged atoms - distance computations for cutoff_idx
@@ -181,33 +182,35 @@ private:
     //*********************************************
 
     // update the power of each site
-    public: std::map<std::string, double> updatePower(hipblasHandle_t handle, hipsolverHandle_t handle_cusolver, GPUBuffers &gpubuf, KMCParameters &p, double Vd);
+    public: std::map<std::string, double> updatePower(cublasHandle_t handle, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, KMCParameters &p, double Vd);
 
 
     //****************************************
     // Heat Solver functions / heat_solver.cpp
     //****************************************
 
-    // find the number of site objects located in the contacts
-    private: int get_num_in_contacts(int num_atoms_contact, std::string contact_name_);
-
-    // construct inverse of the laplacian and the steady state laplacian
+    // construct inverse of the laplacian and the steady state laplacian (and gpu version)
     public: void constructLaplacian(KMCParameters &p);
+    public: void constructLaplacian(KMCParameters &p, cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf);
+
 
     // update the temperature of each site
-    public: std::map<std::string, double> updateTemperature(GPUBuffers &gpubuf, KMCParameters &p, double step_time);
-
+    public: std::map<std::string, double> updateTemperature(cublasHandle_t handle, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, KMCParameters &p, double step_time);
+    
     // update the global temperature
     private: void updateTemperatureGlobal(double event_time, double small_step, double dissipation_constant,
                                  double background_temp, double t_ox, double A, double c_p, std::map<std::string, double> result);
 
     // update the local and global temperatures
-    private: std::map<std::string, double> updateLocalTemperature(double background_temp, double delta_t, double tau, double power_adjustment_term, double k_th_interface,
-                                                         double k_th_vacancies, double num_atoms_contact, std::vector<ELEMENT> metals);
+    private: std::map<std::string, double> updateLocalTemperature(cublasHandle_t handle, double background_temp, double delta_t, double tau, double power_adjustment_term, double k_th_interface,
+                                                         double k_th_vacancies, double num_atoms_contact, std::vector<ELEMENT> metals, double step_time, int N_left_tot, int N_right_tot, int N_center);
+
+    private: std::map<std::string, double> updateLocalTemperature_sparse(cublasHandle_t handle, double background_temp, double delta_t, double tau, double power_adjustment_term, double k_th_interface,
+                                                         double k_th_vacancies, double num_atoms_contact, std::vector<ELEMENT> metals, double step_time, int N_left_tot, int N_right_tot, int N_center);
 
     // update the local and global temperatures in steady state
-    private: std::map<std::string, double> updateLocalTemperatureSteadyState(double background_temp, double delta_t, double tau, double power_adjustment_term, double k_th_interface,
-                                                                    double k_th_vacancies, double num_atoms_contact, std::vector<ELEMENT> metals);
+    private: std::map<std::string, double> updateLocalTemperatureSteadyState(cublasHandle_t handle, double background_temp, double delta_t, double tau, double power_adjustment_term, double k_th_interface,
+                                                                             double k_th_vacancies, double num_atoms_contact, std::vector<ELEMENT> metals, int N_left_tot, int N_right_tot, int N_center);
 
 
     //*****************

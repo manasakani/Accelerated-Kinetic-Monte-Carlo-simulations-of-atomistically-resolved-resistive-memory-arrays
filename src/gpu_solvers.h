@@ -1,37 +1,44 @@
-#include "hip/hip_runtime.h"
 #pragma once
 
 #include "utils.h"
 #include "random_num.h"
 // #define NUM_THREADS 512
 
+// excluded for testing
+#ifndef COMPILE_WITH_TESTS
 #include "gpu_buffers.h"
+#endif 
 
 #include <stdio.h>
 #include <vector>
 #include <cassert>
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 #include <cmath>
 #include <math.h>
 #include <chrono>
 
 #include <thrust/reduce.h>
-#include <rocprim/rocprim.hpp>
-#include <hipcub/hipcub.hpp>
+#include <thrust/extrema.h>
+#include <thrust/binary_search.h>
+#include <thrust/device_ptr.h>
+#include <thrust/scan.h>
+#include <thrust/copy.h>
+#include <thrust/execution_policy.h>
 #include <thrust/sequence.h>
+#include <thrust/device_vector.h>
+#include <thrust/fill.h>
 #include <thrust/transform.h>
-#include <hipsparse.h>
-#include <hipsolver.h>
-#include <hipblas.h>
-#include "rocsparse.h"
-#include "KMC_comm.h"
+#include <cusparse_v2.h>
+
+// Constants needed:
+const double eV_to_J = 1.60217663e-19;          // [C]
+const double h_bar = 1.054571817e-34;           // [Js]
 
 #include "../dist_iterative/dist_conjugate_gradient.h"
 #include "../dist_iterative/dist_spmv.h"
 
+// forward declaration of gpubuf class          
 class GPUBuffers;
-class KMCParameters;
-class Device;
 
 extern "C" {
 
@@ -39,85 +46,17 @@ extern "C" {
 // Neighbor list creation / neighbor_lists_gpu.cu
 //*****************************************************
 
-// constructs the neighbor index lists
-void compute_neighbor_list(MPI_Comm &event_comm, int *counts, int *displ, Device &device, GPUBuffers &gpubuf, KMCParameters &p);
+// constructs the neighbor lists
+void construct_site_neighbor_list_gpu(int *neigh_idx, int *cutoff_window, std::vector<int> &cutoff_idx,
+                                      const ELEMENT *site_element, const double *posx, const double *posy, const double *posz, 
+                                      const double *lattice, const bool pbc, double nn_dist, double cutoff_radius, int N, int max_num_neighbors);
 
-// uodates the cutoff index list
-void compute_cutoff_list(MPI_Comm &pairwise_comm, int *counts, int *displ, Device &device, GPUBuffers &gpubuf, KMCParameters &p);
-
-//***************************************************
-// Matrix solver utilities / iterative_solvers_gpu.cu
-//***************************************************
+//*****************************************************************
+// Initialization of CSR sparsity patterns / initialize_sparsity.cu
+//*****************************************************************
 
 // Initialize the buffer and the indices of the non-zeros in the matrix which represent neighbor connectivity
-void initialize_sparsity_K(GPUBuffers &gpubuf, int pbc, const double nn_dist, int num_atoms_contact, KMC_comm &kmc_comm);
-void initialize_sparsity_CB(GPUBuffers &gpubuf, int pbc, const double nn_dist, int num_atoms_contact);
-
-// Initialize the sparsity of the T matrix (neighbor)
-void initialize_sparsity_T(GPUBuffers &gpubuf, int pbc, const double nn_dist, int num_source_inj, int num_ground_ext, int num_layers_contact, KMC_comm &kmc_comm);
-
-int assemble_sparse_T_submatrix(GPUBuffers &gpubuf, const int N_atom, const double nn_dist, int num_source_inj, int num_ground_ext, int num_layers_contact, 
-                                 const double high_G, const double low_G, const double loop_G, const double Vd, const double m_e, const double V0,
-                                 Distributed_subblock_sparse &T_tunnel, Distributed_matrix *T_neighbor, double *&diag_tunnel_local,
-                                 int *&tunnel_indices_local_d, int *&row_ptr_subblock_d, 
-                                 int *&col_indices_subblock_d, double *&data_d, size_t &nnz_subblock_local, int *&counts_subblock, int *&displ_subblock,
-                                 size_t &num_tunnel_points_global);
-                         
-// check that sparse and dense versions are the same
-void check_sparse_dense_match(int m, int nnz, double *dense_matrix, int* d_csrRowPtr, int* d_csrColInd, double* d_csrVal);
-
-// dump sparse matrix into a file
-void dump_csr_matrix_txt(int m, int nnz, int* d_csrRowPtr, int* d_csrColIndices, double* d_csrValues, int kmc_step_count);
-
-// convert dense matrix to CSR representation
-void denseToCSR(hipsparseHandle_t handle, double* d_dense, int num_rows, int num_cols,
-                double** d_csr_values, int** d_csr_offsets, int** d_csr_columns, int* total_nnz);
-
-// // Solution of A*x = y on sparse representation of A using cusolver in host pointer mode
-// void sparse_system_solve(hipsolverHandle_t handle, int* d_csrRowPtr, int* d_csrColInd, double* d_csrVal,
-//                          int nnz, int m, double *d_x, double *d_y);
-
-// Iterative sparse linear solver using CG steps
-void solve_sparse_CG(hipblasHandle_t handle_cublas, hipsparseHandle_t handle, 
-					 double* A_data, int* A_row_ptr, int* A_col_indices, const int A_nnz, 
-                     int m, double *d_x, double *d_y);
-
-// Iterative sparse linear solver using CG steps on matrix represented in mixed sparse/dense format 
-// the insertion indices specify the correspondence between the (dense) submatrix rows/cols and the (sparse) full matrix rows/cols
-void solve_sparse_CG_splitmatrix(hipblasHandle_t handle_cublas, hipsparseHandle_t handle, 
-                                 double* M, int msub, double* A_data, int* A_row_ptr, int* A_col_indices, const int A_nnz, 
-                                 int m, int *insertion_indices, double *d_x, double *d_y,
-                                 double *diagonal_inv_d);
-
-// Iterative sparse linear solver using CG steps and Jacobi preconditioner
-void solve_sparse_CG_Jacobi(hipblasHandle_t handle_cublas, hipsparseHandle_t handle, 
-                            double* A_data, int* A_row_ptr, int* A_col_indices,  
-                            const int A_nnz, int m, double *d_x, double *d_y);
-
-// Initialize sparsity of the transmission matrix
-void Assemble_X_sparsity(int Natom, const double *posx, const double *posy, const double *posz,
-                         const ELEMENT *metals, const ELEMENT *element, const int *atom_charge, const double *atom_CB_edge,
-                         const double *lattice, bool pbc, double nn_dist, const double tol,
-                         int num_source_inj, int num_ground_ext, const int num_layers_contact,
-                         int num_metals, int **X_row_ptr, int **X_col_indices, int *X_nnz);
-
-
-// populate the values of the transmission matrix
-void Assemble_X(int Natom, const double *posx, const double *posy, const double *posz,
-                const ELEMENT *metals, const ELEMENT *element, const int *atom_charge, const double *atom_CB_edge,
-                const double *lattice, bool pbc, double nn_dist, const double tol, const double Vd, const double m_e, const double V0,
-                const double high_G, const double low_G, const double loop_G,
-                int num_source_inj, int num_ground_ext, const int num_layers_contact,
-                int num_metals, double **X_data, int **X_row_ptr, int **X_col_indices, int *X_nnz);
-
-// populate the values of the transmission matrix
-void Assemble_X2(int Natom, const double *posx, const double *posy, const double *posz,
-                const ELEMENT *metals, const ELEMENT *element, const int *atom_charge, const double *atom_CB_edge,
-                const double *lattice, bool pbc, double nn_dist, const double tol, const double Vd, const double m_e, const double V0,
-                const double high_G, const double low_G, const double loop_G,
-                int num_source_inj, int num_ground_ext, const int num_layers_contact,
-                int num_metals, double **X_data, int **X_row_indices, int **X_row_ptr, int **X_col_indices, int *X_nnz);
-             
+void initialize_sparsity_K(GPUBuffers &gpubuf, int pbc, const double nn_dist, int num_atoms_contact);
 
 // Initialize sparsity of the background potential solver
 void Assemble_K_sparsity(const double *posx, const double *posy, const double *posz,
@@ -126,6 +65,68 @@ void Assemble_K_sparsity(const double *posx, const double *posy, const double *p
                          int **A_row_ptr, int **A_col_indices, int *A_nnz, 
                          int **contact_left_col_indices, int **contact_left_row_ptr, int *contact_left_nnz, 
                          int **contact_right_col_indices, int **contact_right_row_ptr, int *contact_right_nnz);
+
+// Initialize sparsity of the transmission matrix
+void Assemble_X_sparsity(int Natom, const double *posx, const double *posy, const double *posz,
+                         const ELEMENT *metals, const ELEMENT *element, const int *atom_charge, const double *atom_CB_edge,
+                         const double *lattice, bool pbc, double nn_dist, const double tol,
+                         int num_source_inj, int num_ground_ext, const int num_layers_contact, const int num_atoms_reservoir,
+                         int num_metals, int *nnz_per_row_d, int **X_row_ptr, int **X_row_indices, int **X_col_indices, int *X_nnz);
+
+// populate the values of the transmission matrix
+void Assemble_X(int Natom, const double *posx, const double *posy, const double *posz,
+                const ELEMENT *metals, const ELEMENT *element, const int *atom_charge, const double *atom_CB_edge,
+                const double *lattice, bool pbc, double nn_dist, const double tol, const double Vd, const double m_e, const double V0,
+                const double high_G, const double low_G, const double loop_G,
+                int num_source_inj, int num_ground_ext, const int num_layers_contact, const int num_atoms_reservoir,
+                int num_metals, double **X_data, int **X_row_indices, int **X_row_ptr, int **X_col_indices, int *X_nnz);
+
+// Initialize sparsity of the transmission matrix (distributed)
+void Assemble_T_sparsity(GPUBuffers &gpubuf, int pbc, int N_atom, int num_atoms_reservoir, const double nn_dist, int num_source_inj, int num_ground_ext, int num_layers_contact);
+
+void Assemble_T(GPUBuffers &gpubuf, const double nn_dist, const double tol, const double high_G, const double low_G, const double loop_G, 
+                const double Vd, const double m_e, const double V0, int num_source_inj, int num_ground_ext, int num_layers_contact, int num_metals, int Nsub, int num_atoms_reservoir);
+
+// updates the diagonal of the sparse T matrix, distributed
+void update_diagonal_sparse(GPUBuffers &gpubuf, double *diagonal_local_d);
+
+// updates the diagonal for the matrix of current inflows, distributed
+void update_diag_ineg(GPUBuffers &gpubuf, double **ineg_data_d);
+
+//***************************************************
+// Matrix solver utilities / iterative_solvers_gpu.cu
+//***************************************************
+
+// check that sparse and dense versions are the same
+void check_sparse_dense_match(int m, int nnz, double *dense_matrix, int* d_csrRowPtr, int* d_csrColInd, double* d_csrVal);
+
+// dump sparse matrix into a file
+void dump_csr_matrix_txt(int m, int nnz, int* d_csrRowPtr, int* d_csrColIndices, double* d_csrValues, int kmc_step_count);
+
+// convert dense matrix to CSR representation
+void denseToCSR(cusparseHandle_t handle, double* d_dense, int num_rows, int num_cols,
+                double** d_csr_values, int** d_csr_offsets, int** d_csr_columns, int* total_nnz);
+
+// Solution of A*x = y on sparse representation of A using cusolver in host pointer mode
+void sparse_system_solve(cusolverSpHandle_t handle, int* d_csrRowPtr, int* d_csrColInd, double* d_csrVal,
+                         int nnz, int m, double *d_x, double *d_y);
+
+// Iterative sparse linear solver using CG steps
+void solve_sparse_CG(cublasHandle_t handle_cublas, cusparseHandle_t handle, 
+					 double* A_data, int* A_row_ptr, int* A_col_indices, const int A_nnz, 
+                     int m, double *d_x, double *d_y);
+
+// Iterative sparse linear solver using CG steps on matrix represented in mixed sparse/dense format 
+// the insertion indices specify the correspondence between the (dense) submatrix rows/cols and the (sparse) full matrix rows/cols
+void solve_sparse_CG_splitmatrix(cublasHandle_t handle_cublas, cusparseHandle_t handle, 
+                                 double* M, int msub, double* A_data, int* A_row_ptr, int* A_col_indices, const int A_nnz, 
+                                 int m, int *insertion_indices, double *d_x, double *d_y,
+                                 double *diagonal_inv_d);
+
+// Iterative sparse linear solver using CG steps and Jacobi preconditioner
+void solve_sparse_CG_Jacobi(cublasHandle_t handle_cublas, cusparseHandle_t handle, 
+                            double* A_data, int* A_row_ptr, int* A_col_indices,  
+                            const int A_nnz, int m, double *d_x, double *d_y, double tol);
 
 //***************************************************
 // Field solver modules on single GPU / gpu_Device.cu
@@ -140,34 +141,33 @@ void set_gpu(int dev);
 //*****************************************************
 
 // Solve the Laplace equation to get the CB edge along the device
-void update_CB_edge_gpu_sparse(hipblasHandle_t handle_cublas, hipsolverDnHandle_t handle, GPUBuffers &gpubuf,
+void update_CB_edge_gpu_sparse(cublasHandle_t handle_cublas, cusolverDnHandle_t handle, GPUBuffers &gpubuf,
                                const int N, const int N_left_tot, const int N_right_tot,
                                const double d_Vd, const int pbc, const double d_high_G, const double d_low_G, const double nn_dist, 
                                const int num_metals);
 
 // Updates the site-resolved charge (gpu_site_charge) based on a neighborhood condition
-void update_charge_gpu(ELEMENT *d_site_element, 
-                       int *d_site_charge,
-                       int *d_neigh_idx, int N, int nn, 
-                       const ELEMENT *d_metals, const int num_metals, 
-                       const int *count, const int *displ, MPI_Comm &comm);
+void update_charge_gpu(ELEMENT *gpu_site_element, 
+                       int *gpu_site_charge,
+                       int *gpu_neigh_idx, int N, int nn, 
+                       const ELEMENT *metals, const int num_metals);
 
 // Updates the site-resolved potential (gpubuf.site_potential) using a resistive network model 
 // dense matrix with LU solver
-void background_potential_gpu(hipsolverDnHandle_t handle, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
+void background_potential_gpu(cusolverDnHandle_t handle, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
                               const double d_Vd, const int pbc, const double d_high_G, const double d_low_G, const double nn_dist,
                               const int num_metals, int kmc_step_count);
 
 // sparse matrix with iterative solver
-void background_potential_gpu_sparse(hipblasHandle_t handle_cublas, hipsolverDnHandle_t handle, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
+void background_potential_gpu_sparse(cublasHandle_t handle_cublas, cusolverDnHandle_t handle, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
                               const double d_Vd, const int pbc, const double d_high_G, const double d_low_G, const double nn_dist,
                               const int num_metals, int kmc_step_count);
 
-
-// sparse matrix with iterative solver - not distributed
-void background_potential_gpu_sparse_local(hipblasHandle_t handle_cublas, hipsolverDnHandle_t handle, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
+// sparse matrix with iterative solver - does not use dist_iterative library
+void background_potential_gpu_sparse_local(cublasHandle_t handle_cublas, cusolverDnHandle_t handle, GPUBuffers &gpubuf, const int N, const int N_left_tot, const int N_right_tot,
                               const double d_Vd, const int pbc, const double d_high_G, const double d_low_G, const double nn_dist,
                               const int num_metals, int kmc_step_count);
+
 
 // Updates the site-resolved potential (gpubuf.site_potential) using the short-range Poisson solution summed over charged species
 void poisson_gridless_gpu(const int num_atoms_contact, const int pbc, const int N, const double *lattice, 
@@ -178,7 +178,7 @@ void poisson_gridless_gpu(const int num_atoms_contact, const int pbc, const int 
                           const int *cutoff_window, const int *cutoff_idx, const int N_cutoff);
 
 // sums the site_potential_boundary and site_potential_charge into the site_potential_charge
-void sum_and_gather_potential(GPUBuffers &gpubuf, int num_atoms_first_layer, KMC_comm &kmc_comm);
+void sum_and_gather_potential(GPUBuffers &gpubuf);
 
 //**************************************************
 // Current solver functions / current_solver_gpu.cu
@@ -187,41 +187,33 @@ void sum_and_gather_potential(GPUBuffers &gpubuf, int num_atoms_first_layer, KMC
 // Updates the site-resolved dissipated power (gpubuf.site_power) using a graph-based current flow solver 
 
 // dense matrix with LU solver
-void update_power_gpu(hipblasHandle_t handle, hipsolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
+void update_power_gpu(cublasHandle_t handle, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
                       const int num_source_inj, const int num_ground_ext, const int num_layers_contact,
                       const double Vd, const int pbc, 
                       const double high_G, const double low_G, const double loop_G, const double G0, const double tol,
                       const double nn_dist, const double m_e, const double V0, int num_metals, double *imacro,
                       const bool solve_heating_local, const bool solve_heating_global, const double alpha);
                     
-// sparse matrix with iterative solver
-void update_power_gpu_sparse(hipblasHandle_t handle, hipsolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
-                             const int num_source_inj, const int num_ground_ext, const int num_layers_contact,
+// sparse matrix with iterative solver (distributed and local versions)
+void update_power_gpu_sparse(cublasHandle_t handle, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
+                             const int num_source_inj, const int num_ground_ext, const int num_layers_contact, const int num_atoms_reservoir,
+                             const double Vd, const int pbc, const double high_G, const double low_G, const double loop_G, const double G0, const double tol,
+                             const double nn_dist, const double m_e, const double V0, int num_metals, double *imacro,
+                             const bool solve_heating_local, const bool solve_heating_global, const double alpha_disp);
+
+void update_power_gpu_sparse_local(cublasHandle_t handle, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
+                             const int num_source_inj, const int num_ground_ext, const int num_layers_contact, const int num_atoms_reservoir,
                              const double Vd, const int pbc, const double high_G, const double low_G, const double loop_G, const double G0, const double tol,
                              const double nn_dist, const double m_e, const double V0, int num_metals, double *imacro,
                              const bool solve_heating_local, const bool solve_heating_global, const double alpha_disp);
 
 // mixed sparse neighbor matrix + dense tunneling submatrix
-void update_power_gpu_split(hipblasHandle_t handle, hipsolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
+void update_power_gpu_split(cublasHandle_t handle, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
                             const int num_source_inj, const int num_ground_ext, const int num_layers_contact,
                             const double Vd, const int pbc, const double high_G, const double low_G, const double loop_G, const double G0, const double tol,
                             const double nn_dist, const double m_e, const double V0, int num_metals, double *imacro,
                             const bool solve_heating_local, const bool solve_heating_global, const double alpha_disp);
 
-// distributed version which calls the CG library function
-void update_power_gpu_sparse_dist(hipblasHandle_t handle, hipsolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
-                                  const int num_source_inj, const int num_ground_ext, const int num_layers_contact,
-                                  const double Vd,
-                                  const double high_G, const double low_G, const double loop_G, const double G0,
-                                  const double tol,
-                                  const double nn_dist, const double m_e, const double V0, int num_metals, double *imacro,
-                                  const bool solve_heating_local, const bool solve_heating_global, const double alpha_disp);
-
-void update_power_gpu_split_dist(hipblasHandle_t handle, hipsolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
-                                const int num_source_inj, const int num_ground_ext, const int num_layers_contact,
-                                const double Vd, const int pbc, const double high_G, const double low_G, const double loop_G, const double G0, const double tol,
-                                const double nn_dist, const double m_e, const double V0, int num_metals, double *imacro,
-                                const bool solve_heating_local, const bool solve_heating_global, const double alpha_disp);
 
 //********************************************
 // Heat solver functions / heat_solver_gpu.cu
@@ -234,7 +226,17 @@ void update_temperatureglobal_gpu(const double *site_power,
                                   const double number_steps, const double C_thermal, 
                                   const double small_step);
 
+void build_laplacian_gpu(cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
+                         int N, int N_boundary_left, int N_boundary_right, int N_center, double nn_dist, double gamma, double step_time, double L_char);
 
+double update_temperature_local_gpu(cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
+                                    int N, int N_boundary_left, int N_boundary_right, int N_center, double background_temp, 
+                                    double t, double tau, double k_th_interface, double k_th_vacancies, double kmc_step_time, double nn_dist, double T_1, double L_char);
+
+double update_temperature_local_steadystate_gpu(cublasHandle_t handle_cublas, cusolverDnHandle_t handle_cusolver, GPUBuffers &gpubuf, 
+                                                int N, int N_boundary_left, int N_boundary_right, int N_center, double background_temp, 
+                                                double t, double tau, double k_th_interface, double k_th_vacancies, double kmc_step_time, double nn_dist, double T_1, double L_char);
+                                                
 //************************************
 // KMC Event Selection / kmc_events.cu
 //************************************
@@ -257,9 +259,25 @@ double execute_kmc_step_mpi(
         const double *freq, const double *sigma, const double *k,
         const double *posx, const double *posy, const double *posz, 
         const double *site_potential_charge, const double *site_temperature,
-        ELEMENT *site_element, int *site_charge, RandomNumberGenerator &rng);
+        ELEMENT *site_element, int *site_charge, RandomNumberGenerator &rng, const int *neigh_idx_host);
 
+double execute_kmc_step_mpi2(
+        MPI_Comm comm,
+        const int N,
+        const int *count,
+        const int *displs,
+        const int nn, const int *neigh_idx, const int *site_layer,
+        const double *lattice, const int pbc, const double *T_bg, 
+        const double *freq, const double *sigma, const double *k,
+        const double *posx, const double *posy, const double *posz, 
+        const double *site_potential_charge, const double *site_temperature,
+        ELEMENT *site_element, int *site_charge, RandomNumberGenerator &rng, const int *neigh_idx_host);
+
+// excluded for testing
+#ifndef COMPILE_WITH_TESTS
 void copytoConstMemory(std::vector<double> E_gen, std::vector<double> E_rec, std::vector<double> E_Vdiff, std::vector<double> E_Odiff);
+#endif
+
 }
 
 //******************************************************************************
@@ -276,6 +294,7 @@ __device__ inline int is_in_array_gpu(const T *array, const T element, const int
     }
     return 0;
 }
+
 
 __device__ inline double site_dist_gpu(double pos1x, double pos1y, double pos1z,
                                 double pos2x, double pos2y, double pos2z)
@@ -327,6 +346,7 @@ __device__ inline double v_solve_gpu(double r_dist, int charge, const double *si
     return vterm;
 }
 
+
 struct is_defect
 {
     __host__ __device__ bool operator()(const ELEMENT element)
@@ -336,27 +356,11 @@ struct is_defect
 };
 
 
-struct is_not_zero
-{
-    __host__ __device__ bool operator()(const int integer)
-    {
-        return (integer != 0);
-    }
-
-    __host__ __device__ bool operator()(const size_t size)
-    {
-        return (size != 0);
-    }
-};
-
 // used to be named 'calc_diagonal_A_gpu' - row reduction into the diagonal elements for a sparse matrix
 __global__ void reduce_rows_into_diag( int *col_indices, int *row_ptr, double *data, int matrix_size );
 
 // used to be called 'set_diag' - overwrite the diagonal of matrix A with vector diag
 __global__ void write_to_diag(double *A, double *diag, int N);
-
-__global__ void get_is_tunnel(int *is_tunnel, int *tunnel_indices, const ELEMENT *element, 
-                              int N_atom, int num_layers_contact, int num_source_inj, int num_ground_ext);
 
 // used to be named diagonal_sum - sum the rows of A into the vector diag
 template <int NTHREADS>

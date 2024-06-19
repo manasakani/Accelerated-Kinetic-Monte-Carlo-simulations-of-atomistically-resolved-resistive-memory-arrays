@@ -1,5 +1,5 @@
 #pragma once
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 
 void pack_gpu(
@@ -13,7 +13,7 @@ void pack_gpu(
     double *unpacked_buffer,
     int *indices,
     int number_of_elements,
-    hipStream_t stream);
+    cudaStream_t stream);
 
 void unpack_gpu(
     double *unpacked_buffer,
@@ -26,7 +26,7 @@ void unpack_gpu(
     double *packed_buffer,
     int *indices,
     int number_of_elements,
-    hipStream_t stream);
+    cudaStream_t stream);
 
 void unpack_add(
     double *unpacked_buffer,
@@ -39,7 +39,7 @@ void unpack_add(
     double *packed_buffer,
     int *indices,
     int number_of_elements,
-    hipStream_t stream);
+    cudaStream_t stream);
 
 void cg_addvec(
     double *x,
@@ -52,7 +52,7 @@ void cg_addvec(
     double beta,
     double *y,
     int n,
-    hipStream_t stream);
+    cudaStream_t stream);
 
 void fused_daxpy(
     double alpha1,
@@ -71,7 +71,7 @@ void fused_daxpy(
     double *y1,
     double *y2,
     int n,
-    hipStream_t stream);
+    cudaStream_t stream);
 
 void fused_daxpy2(
     double alpha1,
@@ -90,7 +90,7 @@ void fused_daxpy2(
     double *y1,
     double *y2,
     int n,
-    hipStream_t stream);
+    cudaStream_t stream);
 
 void elementwise_vector_vector(
     double *array1,
@@ -103,4 +103,4 @@ void elementwise_vector_vector(
     double *array2,
     double *result,
     int size,
-    hipStream_t stream);
+    cudaStream_t stream);

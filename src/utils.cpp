@@ -69,6 +69,16 @@ void Layer::disp_layer()
     print("Layer of type " << type << " from " << start_x << " to " << end_x);
 }
 
+void make_folder(const std::string folder_name)
+{
+    const bool folder_already_exists = location_exists(folder_name);
+    if (folder_already_exists)
+    {
+        std::remove(folder_name.c_str());
+    }
+    const int error = mkdir(folder_name.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+}
+
 int read_xyz(std::string filename, std::vector<ELEMENT> &elements,
              std::vector<double> &x, std::vector<double> &y, std::vector<double> &z)
 {
@@ -81,21 +91,67 @@ int read_xyz(std::string filename, std::vector<ELEMENT> &elements,
     std::getline(xyz, line);
 
     double x_, y_, z_;
+    // double x_, y_, z_, V_, p_, T_;
     std::string element_;
     for (int i = 0; i < N; i++)
     {
         getline(xyz, line);
         std::istringstream iss(line);
         iss >> element_ >> x_ >> y_ >> z_;
+        // iss >> element_ >> x_ >> y_ >> z_ >> V_ >> p_ >> T_;
         ELEMENT e = update_element(element_);
         elements.push_back(e);
         x.push_back(x_);
         y.push_back(y_);
         z.push_back(z_);
+        // T.push_back(T_);
     }
     xyz.close();
     return N;
 }
+
+// int read_xyz(std::string filename, std::vector<ELEMENT> &elements,
+//              std::vector<double> &x, std::vector<double> &y, std::vector<double> &z, 
+//              std::vector<double> &T, double T_bg)
+// {
+//     int N;
+//     std::string line, temp;
+//     std::ifstream xyz(filename);
+//     std::getline(xyz, line);
+//     std::istringstream iss1(line);
+//     iss1 >> N;
+//     std::getline(xyz, line);
+
+//     double x_, y_, z_, V_, p_, T_;
+//     std::string element_;
+//     for (int i = 0; i < N; i++)
+//     {
+//         getline(xyz, line);
+//         std::istringstream iss(line);
+
+//         // check length of line:
+//         if (line.length() == 4) {
+//             iss >> element_ >> x_ >> y_ >> z_;
+//             ELEMENT e = update_element(element_);
+//             elements.push_back(e);
+//             x.push_back(x_);
+//             y.push_back(y_);
+//             z.push_back(z_);
+//             T.push_back(T_bg);
+//         }
+//         if (line.length() > 4) {
+//             iss >> element_ >> x_ >> y_ >> z_ >> V_ >> p_ >> T_;
+//             ELEMENT e = update_element(element_);
+//             elements.push_back(e);
+//             x.push_back(x_);
+//             y.push_back(y_);
+//             z.push_back(z_);
+//             T.push_back(T_);
+//         }
+//     }
+//     xyz.close();
+//     return N;
+// }
 
 double site_dist(double pos1x, double pos1y, double pos1z, 
                  double pos2x, double pos2y, double pos2z, std::vector<double> lattice, bool pbc)
@@ -355,68 +411,78 @@ if (file.is_open()) {
 // *** CuBLAS calls ***
 // *****************************************************************
 
-void CheckCublasError(hipblasStatus_t const& status) {
+void CheckCublasError(cublasStatus_t const& status) {
 
 #ifdef USE_CUDA
-  if (status != HIPBLAS_STATUS_SUCCESS) {
+  if (status != CUBLAS_STATUS_SUCCESS) {
     throw std::runtime_error("cuBLAS failed with error code: " +
                              std::to_string(status));
   }
 #endif
 }
 
-hipblasHandle_t CreateCublasHandle() {
+cublasHandle_t CreateCublasHandle(int device) {
 #ifdef USE_CUDA
-  hipblasHandle_t handle;
-  CheckCublasError(hipblasCreate(&handle));
+  if (device >= 0) {
+    if (cudaSetDevice(device) != cudaSuccess) {
+      throw std::runtime_error("Failed to set CUDA device.");
+    }
+  }
+  cublasHandle_t handle;
+  CheckCublasError(cublasCreate(&handle));
   return handle;
 #endif
 }
 
-void CreateCublasHandle(hipblasHandle_t handle) {
+void CreateCublasHandle(cublasHandle_t handle, int device) {
 #ifdef USE_CUDA
-  CheckCublasError(hipblasCreate(&handle));
+  if (device >= 0) {
+    if (cudaSetDevice(device) != cudaSuccess) {
+      throw std::runtime_error("Failed to set CUDA device.");
+    }
+  }
+  CheckCublasError(cublasCreate(&handle));
 #endif
 }
 
-void gemm(hipblasHandle_t handle, char *transa, char *transb, int *m, int *n, int *k, double *alpha, double *A, int *lda, double *B, int *ldb, double *beta, double *C, int *ldc) {
+void gemm(cublasHandle_t handle, char *transa, char *transb, int *m, int *n, int *k, double *alpha, double *A, int *lda, double *B, int *ldb, double *beta, double *C, int *ldc) {
 
 #ifdef USE_CUDA
-    hipblasSetPointerMode(handle, HIPBLAS_POINTER_MODE_DEVICE);
+    cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_DEVICE);
 
     double *gpu_A, *gpu_B, *gpu_C, *gpu_alpha, *gpu_beta;
-    hipMalloc((void**)&gpu_A, ((*m) * (*k)) * sizeof(double));
-    hipMalloc((void**)&gpu_B, ((*k) * (*n)) * sizeof(double));
-    hipMalloc((void**)&gpu_C, ((*m) * (*n)) * sizeof(double));
-    hipMalloc((void**)&gpu_alpha, sizeof(double));
-    hipMalloc((void**)&gpu_beta, sizeof(double));
+    cudaMalloc((void**)&gpu_A, ((*m) * (*k)) * sizeof(double));
+    cudaMalloc((void**)&gpu_B, ((*k) * (*n)) * sizeof(double));
+    cudaMalloc((void**)&gpu_C, ((*m) * (*n)) * sizeof(double));
+    cudaMalloc((void**)&gpu_alpha, sizeof(double));
+    cudaMalloc((void**)&gpu_beta, sizeof(double));
 
-    hipMemcpy(gpu_A, A, ((*m) * (*k)) * sizeof(double), hipMemcpyHostToDevice);
-    hipMemcpy(gpu_B, B, ((*k) * (*n)) * sizeof(double), hipMemcpyHostToDevice);
-    hipMemcpy(gpu_C, C, ((*m) * (*n)) * sizeof(double), hipMemcpyHostToDevice);
-    hipMemcpy(gpu_alpha, alpha, sizeof(double), hipMemcpyHostToDevice);
-    hipMemcpy(gpu_beta, beta, sizeof(double), hipMemcpyHostToDevice);
+    cudaMemcpy(gpu_A, A, ((*m) * (*k)) * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_B, B, ((*k) * (*n)) * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_C, C, ((*m) * (*n)) * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_alpha, alpha, sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_beta, beta, sizeof(double), cudaMemcpyHostToDevice);
 
     // auto handle = CreateCublasHandle(0);
-    // hipblasSetPointerMode(handle, HIPBLAS_POINTER_MODE_DEVICE);
+    // cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_DEVICE);
 
     //printf("M, N, K, alpha, beta = %d, %d, %d, %lf, %lf\n", *m, *n, *k, *alpha, *beta);
     //printf("lda, ldb, ldc = %d, %d, %d\n", *lda, *ldb, *ldc);
 
-    // CheckCublasError(hipblasDgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_N, *m, *n, *k, gpu_alpha, A, *lda, B, *ldb, gpu_beta, C, *ldc));
-    CheckCublasError(hipblasDgemv(handle, HIPBLAS_OP_T, *m, *k, gpu_alpha, gpu_A, *lda, gpu_B, 1, gpu_beta, gpu_C, 1));
-    // hipblasDgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_N, *m, *n, *k, gpu_alpha, A, *k, B, *n, gpu_beta, C, *n);
-    hipDeviceSynchronize();
+    // CheckCublasError(cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, *m, *n, *k, gpu_alpha, A, *lda, B, *ldb, gpu_beta, C, *ldc));
+    CheckCublasError(cublasDgemv(handle, CUBLAS_OP_T, *m, *k, gpu_alpha, gpu_A, *lda, gpu_B, 1, gpu_beta, gpu_C, 1));
+    // cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, *m, *n, *k, gpu_alpha, A, *k, B, *n, gpu_beta, C, *n);
+    cudaDeviceSynchronize();
 
-    // CheckCublasError(hipblasDestroy(handle));
+    // CheckCublasError(cublasDestroy(handle));
 
-    hipMemcpy(C, gpu_C, ((*m) * (*n)) * sizeof(double), hipMemcpyDeviceToHost);
+    cudaMemcpy(C, gpu_C, ((*m) * (*n)) * sizeof(double), cudaMemcpyDeviceToHost);
 
-    hipFree(gpu_A);
-    hipFree(gpu_B);
-    hipFree(gpu_C);
-    hipFree(gpu_alpha);
-    hipFree(gpu_beta);
+    cudaFree(gpu_A);
+    cudaFree(gpu_B);
+    cudaFree(gpu_C);
+    cudaFree(gpu_alpha);
+    cudaFree(gpu_beta);
 
 #else
 
@@ -433,29 +499,32 @@ void gemm(hipblasHandle_t handle, char *transa, char *transb, int *m, int *n, in
 // *** CuSolver calls ***
 // *****************************************************************
 
-hipsolverHandle_t CreateCusolverDnHandle(int device) {
+cusolverDnHandle_t CreateCusolverDnHandle(int device) {
 #ifdef USE_CUDA
-  hipsolverHandle_t handle;
-  CheckCusolverDnError(hipsolverCreate(&handle));
+  if (cudaSetDevice(device) != cudaSuccess) {
+    throw std::runtime_error("Failed to set CUDA device.");
+  }
+  cusolverDnHandle_t handle;
+  CheckCusolverDnError(cusolverDnCreate(&handle));
   return handle;
 #endif
 }
 
-// void CreateCusolverDnHandle(hipsolverHandle_t handle, int device) {
-// #ifdef USE_CUDA
-//   if (hipSetDevice(device) != hipSuccess) {
-//     throw std::runtime_error("Failed to set CUDA device.");
-//   }
-//   std::cout << "making handle\n";
-//   CheckCusolverDnError(hipsolverCreate(&handle));
-//   std::cout << "made handle\n";
-// #endif
-// }
+void CreateCusolverDnHandle(cusolverDnHandle_t handle, int device) {
+#ifdef USE_CUDA
+  if (cudaSetDevice(device) != cudaSuccess) {
+    throw std::runtime_error("Failed to set CUDA device.");
+  }
+  std::cout << "making handle\n";
+  CheckCusolverDnError(cusolverDnCreate(&handle));
+  std::cout << "made handle\n";
+#endif
+}
 
-void CheckCusolverDnError(hipsolverStatus_t const &status)
+void CheckCusolverDnError(cusolverStatus_t const &status)
 {
 #ifdef USE_CUDA
-    if (status != HIPSOLVER_STATUS_SUCCESS)
+    if (status != CUSOLVER_STATUS_SUCCESS)
     {
         throw std::runtime_error("cuSOLVER failed with error code: " +
                                  std::to_string(status));
@@ -468,66 +537,66 @@ void gesv(int *N, int *nrhs, double *A, int *lda, int *ipiv, double *B, int *ldb
 
 #ifdef USE_CUDA
 
-    hipsolverDnHandle_t handle = CreateCusolverDnHandle(0);
+    cusolverDnHandle_t handle = CreateCusolverDnHandle(0);
 
     // https://github.com/NVIDIA/CUDALibrarySamples/blob/master/cuSOLVER/getrf/cusolver_getrf_example.cu
     // printf("Solving linear system on the GPU ...\n");
 
-    // hipblasSetPointerMode(handle, HIPBLAS_POINTER_MODE_DEVICE);
+    // cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_DEVICE);
     int lwork = 0;                /* size of workspace */
     double *gpu_work = nullptr;   /* device workspace for getrf */
     int *gpu_info = nullptr;      /* error info */
     double *gpu_A, *gpu_B;
     int *gpu_ipiv;
 
-    hipMalloc((void**)&gpu_A, ((*N) * (*N)) * sizeof(double));
-    hipMalloc((void**)&gpu_B, ((*N) * (*nrhs)) * sizeof(double));
-    hipMalloc((void**)&gpu_ipiv, (*N) * sizeof(int));
-    hipMalloc((void **)(&gpu_info), sizeof(int));
+    cudaMalloc((void**)&gpu_A, ((*N) * (*N)) * sizeof(double));
+    cudaMalloc((void**)&gpu_B, ((*N) * (*nrhs)) * sizeof(double));
+    cudaMalloc((void**)&gpu_ipiv, (*N) * sizeof(int));
+    cudaMalloc((void **)(&gpu_info), sizeof(int));
 
     if (*N == *lda)
     {
-        hipMemcpy(gpu_A, A, ((*N) * (*N)) * sizeof(double), hipMemcpyHostToDevice);
+        cudaMemcpy(gpu_A, A, ((*N) * (*N)) * sizeof(double), cudaMemcpyHostToDevice);
     } else {
-        hipMemcpy2D(gpu_A,   (*N) * sizeof(double),   A,   (*lda) * sizeof(double),   (*N) * sizeof(double), (*N), hipMemcpyHostToDevice);
+        cudaMemcpy2D(gpu_A,   (*N) * sizeof(double),   A,   (*lda) * sizeof(double),   (*N) * sizeof(double), (*N), cudaMemcpyHostToDevice);
     }
 
-    hipMemcpy(gpu_B, B, ((*N) * (*nrhs)) * sizeof(double), hipMemcpyHostToDevice);
-    hipMemcpy(gpu_ipiv, ipiv, (*N) * sizeof(int), hipMemcpyHostToDevice);
+    cudaMemcpy(gpu_B, B, ((*N) * (*nrhs)) * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_ipiv, ipiv, (*N) * sizeof(int), cudaMemcpyHostToDevice);
 
     // CheckCusolverDnError(cusolverDnDgetrf_bufferSize(handle, *N, *N, gpu_A, *lda, &lwork));
-    CheckCusolverDnError(hipsolverDgetrf_bufferSize(handle, *N, *N, gpu_A, *N, &lwork));
-    hipMalloc((void **)(&gpu_work), sizeof(double) * lwork);
+    CheckCusolverDnError(cusolverDnDgetrf_bufferSize(handle, *N, *N, gpu_A, *N, &lwork));
+    cudaMalloc((void **)(&gpu_work), sizeof(double) * lwork);
 
     // Solve Ax=B through LU factorization
     // CheckCusolverDnError(cusolverDnDgetrf(handle, *N, *N, gpu_A, *lda, gpu_work, gpu_ipiv, gpu_info));
-    CheckCusolverDnError(hipsolverDnDgetrf(handle, *N, *N, gpu_A, *N, gpu_work, gpu_ipiv, gpu_info));
-    // hipMemcpy(&info, gpu_info, sizeof(int), hipMemcpyDeviceToHost);
+    CheckCusolverDnError(cusolverDnDgetrf(handle, *N, *N, gpu_A, *N, gpu_work, gpu_ipiv, gpu_info));
+    // cudaMemcpy(&info, gpu_info, sizeof(int), cudaMemcpyDeviceToHost);
     // printf("info for cusolverDnDgetrf: %i \n", info);
-    hipDeviceSynchronize();
+    cudaDeviceSynchronize();
 
-    hipMemcpy(info, gpu_info, sizeof(int), hipMemcpyDeviceToHost);
+    cudaMemcpy(info, gpu_info, sizeof(int), cudaMemcpyDeviceToHost);
     if (*info != 0){
         std::cout << "WARNING: info for cusolverDnDgetrf: " << *info << "\n";
     }
 
-    // CheckCusolverDnError(cusolverDnDgetrs(handle, HIPBLAS_OP_N, *N, *nrhs, gpu_A, *lda, gpu_ipiv, gpu_B, *ldb, gpu_info));
-    CheckCusolverDnError(hipsolverDnDgetrs(handle, HIPSOLVER_OP_N, *N, *nrhs, gpu_A, *N, gpu_ipiv, gpu_B, *N, gpu_info));
+    // CheckCusolverDnError(cusolverDnDgetrs(handle, CUBLAS_OP_N, *N, *nrhs, gpu_A, *lda, gpu_ipiv, gpu_B, *ldb, gpu_info));
+    CheckCusolverDnError(cusolverDnDgetrs(handle, CUBLAS_OP_N, *N, *nrhs, gpu_A, *N, gpu_ipiv, gpu_B, *N, gpu_info));
 
-    hipMemcpy(info, gpu_info, sizeof(int), hipMemcpyDeviceToHost);
+    cudaMemcpy(info, gpu_info, sizeof(int), cudaMemcpyDeviceToHost);
     if (*info != 0){
         std::cout << "WARNING: info for cusolverDnDgetrs: " << *info << "\n";
     }
-    hipDeviceSynchronize();
+    cudaDeviceSynchronize();
 
     // Result is in B
-    hipMemcpy(B, gpu_B, ((*N) * (*nrhs)) * sizeof(double), hipMemcpyDeviceToHost);
+    cudaMemcpy(B, gpu_B, ((*N) * (*nrhs)) * sizeof(double), cudaMemcpyDeviceToHost);
 
-    hipFree(gpu_A);
-    hipFree(gpu_B);
-    hipFree(gpu_ipiv);
-    hipFree(gpu_work);
-    hipFree(gpu_info);
+    cudaFree(gpu_A);
+    cudaFree(gpu_B);
+    cudaFree(gpu_ipiv);
+    cudaFree(gpu_work);
+    cudaFree(gpu_info);
 
 #else
 

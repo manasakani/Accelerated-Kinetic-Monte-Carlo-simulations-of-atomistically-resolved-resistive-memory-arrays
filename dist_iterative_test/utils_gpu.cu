@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 #include "utils_gpu.h"
 
 
@@ -35,7 +34,7 @@ void extract_diagonal_inv_sqrt(
 {
     int block_size = 1024;
     int num_blocks = (matrix_size + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_extract_diagonal_inv_sqrt, num_blocks, block_size, 0, 0, 
+    _extract_diagonal_inv_sqrt<<<num_blocks, block_size>>>(
         data,
         col_indices,
         row_indptr,
@@ -77,7 +76,7 @@ void extract_diagonal_inv(
 {
     int block_size = 1024;
     int num_blocks = (matrix_size + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_extract_diagonal_inv, num_blocks, block_size, 0, 0, 
+    _extract_diagonal_inv<<<num_blocks, block_size>>>(
         data,
         col_indices,
         row_indptr,
@@ -107,7 +106,7 @@ void precondition_vector_gpu(
 {
     int block_size = 1024;
     int num_blocks = (matrix_size + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_precondition_vector_gpu, num_blocks, block_size, 0, 0, 
+    _precondition_vector_gpu<<<num_blocks, block_size>>>(
         array,
         diagonal_values_inv_sqrt,
         matrix_size
@@ -136,7 +135,7 @@ void unpreecondition_vector_gpu(
 {
     int block_size = 1024;
     int num_blocks = (matrix_size + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_unpreecondition_vector_gpu, num_blocks, block_size, 0, 0, 
+    _unpreecondition_vector_gpu<<<num_blocks, block_size>>>(
         array,
         diagonal_values_inv_sqrt,
         matrix_size
@@ -172,7 +171,7 @@ void symmetric_precondition_matrix_gpu(
 {
     int block_size = 1024;
     int num_blocks = (matrix_size + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_symmetric_precondition_matrix_gpu, num_blocks, block_size, 0, 0, 
+    _symmetric_precondition_matrix_gpu<<<num_blocks, block_size>>>(
         data,
         col_indices,
         row_indptr,
@@ -202,7 +201,7 @@ void invert_array(
 {
     int block_size = 1024;
     int num_blocks = (matrix_size + block_size - 1) / block_size;
-    hipLaunchKernelGGL(_invert_array, num_blocks, block_size, 0, 0, 
+    _invert_array<<<num_blocks, block_size>>>(
         array_in,
         array_out,
         matrix_size

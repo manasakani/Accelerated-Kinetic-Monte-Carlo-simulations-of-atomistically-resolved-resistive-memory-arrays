@@ -25,6 +25,10 @@ KMCParameters::KMCParameters(std::string param_file){
         if (line.find("restart ") != std::string::npos) {
 			restart = read_bool(line);
 		}
+
+		if (line.find("restart_temperature ") != std::string::npos) {
+			restart_temperature = read_bool(line);
+		}
 		
 		if (line.find("restart_xyz_file ") != std::string::npos) {
 			restart_xyz_file = read_string(line);
@@ -91,6 +95,10 @@ KMCParameters::KMCParameters(std::string param_file){
 		if (line.find("nn_dist ") != std::string::npos) {
 			nn_dist = read_double(line);
 		}
+
+		if (line.find("event_dist ") != std::string::npos) {
+			event_dist = read_double(line);
+		}
 		
 		if (line.find("attempt_frequency ") != std::string::npos) {
 			freq = read_double(line);
@@ -100,7 +108,7 @@ KMCParameters::KMCParameters(std::string param_file){
 			shifts = read_vec_double(line);
 		}
 		
-		if (line.find("lattice ") != std::string::npos) {			
+		if (line.find("lattice ") != std::string::npos) {
 			lattice = read_vec_double(line);
 		}
 		
@@ -230,6 +238,10 @@ KMCParameters::KMCParameters(std::string param_file){
 		
 		if (line.find("t_ox ") != std::string::npos) {
 			t_ox = read_double(line);
+		}
+
+		if (line.find("reservoir_layer_start ") != std::string::npos) {
+			reservoir_layer_start = read_double(line);
 		}
 		
 		if (line.find("A ") != std::string::npos) {
@@ -392,7 +404,7 @@ void KMCParameters::set_expression_parameters(){
 	high_G = G_coeff * 1;
 	low_G = G_coeff * 1e-8; 																						// [S]
 	k = 8.987552e9 / epsilon;   																				  	// [N m^2 / C^2]
-    k_th_interface = k_th_non_vacancy + (k_th_vacancies - k_th_non_vacancy) * initial_vacancy_concentration; 		// [W/mK]
+	k_th_interface = k_th_non_vacancy + (k_th_vacancies - k_th_non_vacancy) * initial_vacancy_concentration; 		// [W/mK]
     tau = k_th_interface / (L_char * L_char * c_p * 1e6);                                                   	 	// Thermal rate constant [1/s]
     m_e = m_r * m_0;            																				  	// [kg] 
 }

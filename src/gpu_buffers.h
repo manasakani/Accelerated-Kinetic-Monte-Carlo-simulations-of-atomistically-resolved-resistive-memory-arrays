@@ -3,7 +3,9 @@
 #include <mpi.h>
 #include "../dist_iterative/dist_objects.h"
 
+#ifdef USE_CUDA
 #include "gpu_solvers.h"
+#endif
 
 // forward declaration of device class
 class Device;
@@ -35,11 +37,6 @@ public:
     double *potential_local_h = nullptr; // = (double *)calloc(gpubuf.count_sites[gpubuf.rank], sizeof(double));
     double *potential_h = nullptr; // (double *)calloc(gpubuf.N_, sizeof(double));
 
-    // CUDA library handles
-    // hipblasHandle_t cublas_handle;
-    // cusolverDnHandle_t  cusolver_handle;
-    // hipsparseHandle_t cusparse_handle;
-
     // CSR indices pre-computation for K
     int *Device_row_ptr_d = nullptr;                // CSR representation of the matrix which represents connectivity in the device
     int *Device_col_indices_d = nullptr;            
@@ -49,6 +46,12 @@ public:
     int *contact_right_col_indices = nullptr;       
     int Device_nnz, contact_left_nnz, contact_right_nnz;
 
+    // CSR matrix pre-computation for L and L_ss (the Laplcian)
+    int *L_row_ptr_d = nullptr;         
+    int *L_col_indices_d = nullptr;
+    double *L_values_d = nullptr;
+    double *Lss_values_d = nullptr;
+    int L_nnz;
 
     // NOT gpu pointers, passed by value
     int num_metal_types_ = 0;
@@ -70,29 +73,43 @@ public:
     // copy back just some device attribute vectors:
     void copy_power_fromGPU(std::vector<double> &power);
     void copy_charge_toGPU(std::vector<int> &charge);
-    // void copy_atom_CB_edge_to_GPU();        ///IMPLEMENT THIS BEFORE DOING MULTIPLE V POINTS
     void copy_Tbg_toGPU(double new_T_bg);
 
+    // MPI data split
+    MPI_Comm comm;
+    int rank, size;
+
+    // Distribution of sites without boundaries
+    int *count_K_device = nullptr;
+    int *displ_K_device = nullptr;
+
+    // Distribution of sites with boundaries
+    int *count_sites = nullptr;
+    int *displ_sites = nullptr;
     Distributed_matrix *K_distributed = nullptr;
-    Distributed_vector *K_p_distributed = nullptr;            // vector for SPMV of K*p
-    int *left_row_ptr_d = nullptr;                            // CSR representation of the matrix which represents connectivity of the left contact
+    Distributed_vector *K_p_distributed = nullptr;                  // vector for SPMV of K*p
+    int *left_row_ptr_d = nullptr;                                  // CSR representation of the matrix which represents connectivity of the left boundary
     int *left_col_indices_d = nullptr;
-    int *right_row_ptr_d = nullptr;                           // CSR representation of the matrix which represents connectivity of the right contact
+    int *right_row_ptr_d = nullptr;                                 // CSR representation of the matrix which represents connectivity of the right boundary
     int *right_col_indices_d = nullptr; 
     int left_nnz, right_nnz;
-    
 
-    // buffers used for the T matrix:
-    Distributed_matrix *T_distributed = nullptr;
-    Distributed_vector *T_p_distributed = nullptr;            // vector for SPMV of T*p
+    int *nnz_per_row_d = nullptr;                                   // number of non-zero elements per row buffer which can be reused
+
+    // buffers used for the distributed T/X matrix:
+    int *count_T_device = nullptr;
+    int *displ_T_device = nullptr;
+    Distributed_matrix *T_distributed = nullptr;              // matrix for the full sparsity of T
+    Distributed_vector *T_p_distributed = nullptr;            // rhs for the T matrix
 
     // constructor allocates nothing (used for CPU-only code):
     GPUBuffers(){};
 
     // constructor allocates arrays in GPU memory
     GPUBuffers(std::vector<Layer> layers, std::vector<int> site_layer_in, double freq_in, int N, int N_atom,
-               std::vector<ELEMENT> site_element_in, std::vector<double> site_x_in,  std::vector<double> site_y_in,  std::vector<double> site_z_in,
+               std::vector<double> site_x_in,  std::vector<double> site_y_in,  std::vector<double> site_z_in,
                int nn, double sigma_in, double k_in, std::vector<double> lattice_in, 
+               std::vector<int> neigh_idx_in, std::vector<int> cutoff_window_in, std::vector<int> cutoff_idx_in,
                std::vector<ELEMENT> metals, int num_metals_types, MPI_Comm comm, int N_contact) {
             
         this->N_ = N;
@@ -100,7 +117,7 @@ public:
         this->N_sub_ = N_atom + 1;                          // size of matrix T
         this->nn_ = nn;
         this->num_metal_types_ = num_metals_types;
-        // this->N_cutoff_ = cutoff_idx_in.size()/N_;  
+        this->N_cutoff_ = cutoff_idx_in.size()/N_;  
 
         // make layer arrays 
         for (auto l : layers){
@@ -111,51 +128,134 @@ public:
         }
         int num_layers = layers.size();
 
+        // allocate MPI data split for sites
+        MPI_Comm_rank(comm, &rank);
+        MPI_Comm_size(comm, &size);
+        this->comm = comm;
+
+        // *** divide K matrix between ranks and store the distribution ***
+        count_K_device = new int[size];
+        displ_K_device = new int[size];
+        int rows_per_rank_K_device = (N - 2*N_contact) / size;
+        for (int i = 0; i < size; ++i) {
+            if(i < (N - 2*N_contact) % size){
+                count_K_device[i] = rows_per_rank_K_device+1;
+            }
+            else{
+                count_K_device[i] = rows_per_rank_K_device;
+            }
+        }
+        displ_K_device[0] = 0;
+        for (int i = 1; i < size; ++i) {
+            displ_K_device[i] = displ_K_device[i-1] + count_K_device[i-1];
+        }
+
+        // TODO better split
+        count_sites = new int[size];
+        displ_sites = new int[size];
+        for(int i = 0; i < size; ++i){
+            count_sites[i] = count_K_device[i];
+        }
+        count_sites[0] += N_contact;
+        count_sites[size-1] += N_contact;
+        displ_sites[0] = 0;
+        for (int i = 1; i < size; ++i) {
+            displ_sites[i] = displ_sites[i-1] + count_sites[i-1];
+        }
+
+        // *** divide T matrix between ranks and store the distribution ***
+        count_T_device = new int[size];
+        displ_T_device = new int[size];
+        int rows_per_rank_T_device = N_sub_ / size;
+        for (int i = 0; i < size; ++i) {
+            if(i < N_sub_ % size){
+                count_T_device[i] = rows_per_rank_T_device+1;
+                displ_T_device[i] = i * (rows_per_rank_T_device+1);
+            } 
+            else {
+                count_T_device[i] = rows_per_rank_T_device;
+                displ_T_device[i] = i * rows_per_rank_T_device + N_sub_ % size;
+            }
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+
+#ifdef USE_CUDA
+
+        // small lists and variables to store in GPU cache
+        copytoConstMemory(E_gen_host, E_rec_host, E_Vdiff_host, E_Odiff_host);
+        cudaDeviceSynchronize();
+        
         // member variables of the KMCProcess 
-        gpuErrchk( hipMalloc((void**)&site_layer, N_ * sizeof(int)) );
+        gpuErrchk( cudaMalloc((void**)&site_layer, N_ * sizeof(int)) );
 
         // member variables of the Device
-        gpuErrchk( hipMalloc((void**)&site_element, N_ * sizeof(ELEMENT)) );
-        gpuErrchk( hipMalloc((void**)&metal_types, num_metal_types_ * sizeof(ELEMENT)) );
-        gpuErrchk( hipMalloc((void**)&site_x, N_  * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&site_y, N_  * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&site_z, N_  * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&site_power, N_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&site_CB_edge, N_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&site_potential_boundary, N_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&site_potential_charge, N_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&site_temperature, N_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&site_charge, N_ * sizeof(int)) );
-        gpuErrchk( hipMalloc((void**)&site_element, N_ * sizeof(ELEMENT)) );
-        gpuErrchk( hipMalloc((void**)&T_bg, 1 * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&sigma, 1 * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&k, 1 * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&lattice, 3 * sizeof(double)) );
-        gpuErrchk( hipMalloc((void**)&freq, 1 * sizeof(double)) );
-        gpuErrchk( hipMalloc((void **)&atom_element, N_ * sizeof(ELEMENT)) );
-        gpuErrchk( hipMalloc((void **)&atom_x, N_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void **)&atom_y, N_ * sizeof(double)) );             // these have length N_ since it's a maximum
-        gpuErrchk( hipMalloc((void **)&atom_z, N_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void **)&atom_power, N_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void **)&atom_CB_edge, N_atom_ * sizeof(double)) );
-        gpuErrchk( hipMalloc((void **)&atom_charge, N_ * sizeof(int)) );
+        gpuErrchk( cudaMalloc((void**)&site_element, N_ * sizeof(ELEMENT)) );
+        gpuErrchk( cudaMalloc((void**)&metal_types, num_metal_types_ * sizeof(ELEMENT)) );
+        gpuErrchk( cudaMalloc((void**)&site_x, N_  * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&site_y, N_  * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&site_z, N_  * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&site_power, N_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&site_CB_edge, N_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&site_potential_boundary, N_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&site_potential_charge, N_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&site_temperature, N_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&site_charge, N_ * sizeof(int)) );
+        gpuErrchk( cudaMalloc((void**)&neigh_idx, N_ * nn_ * sizeof(int)) );
+        gpuErrchk( cudaMalloc((void**)&cutoff_window, N_ * 2 * sizeof(int)) );
+        gpuErrchk( cudaMalloc((void**)&cutoff_idx, N_ * N_cutoff_ * sizeof(int)) );
+        gpuErrchk( cudaMalloc((void**)&T_bg, 1 * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&sigma, 1 * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&k, 1 * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&lattice, 3 * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void**)&freq, 1 * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void **)&atom_element, N_ * sizeof(ELEMENT)) );
+        gpuErrchk( cudaMalloc((void **)&atom_x, N_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void **)&atom_y, N_ * sizeof(double)) );             // these have length N_ since it's a maximum
+        gpuErrchk( cudaMalloc((void **)&atom_z, N_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void **)&atom_power, N_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void **)&atom_CB_edge, N_atom_ * sizeof(double)) );
+        gpuErrchk( cudaMalloc((void **)&atom_charge, N_ * sizeof(int)) );
+
+        // host vectors used for the collection and sum of the distributed potential
+        gpuErrchk( cudaMallocHost((void **)&potential_local_h, count_sites[rank] * sizeof(double)) );
+        gpuErrchk( cudaMallocHost((void **)&potential_h, N_ * sizeof(double)) );
+            
+        cudaDeviceSynchronize();
 
         // virtual potentials initial guess to store (solution vector for dissipated power solver):
-        gpuErrchk( hipMalloc((void **)&atom_virtual_potentials, (N_atom_ + 2) * sizeof(double)) );
-        gpuErrchk( hipMemset(atom_virtual_potentials, 0, (N_atom_ + 2) * sizeof(double)) );                          // initialize the solution vector for the dissipated power                                 
+        gpuErrchk( cudaMalloc((void **)&atom_virtual_potentials, (N_atom_ + 2) * sizeof(double)) );
+        gpuErrchk( cudaMemset(atom_virtual_potentials, 0, (N_atom_ + 2) * sizeof(double)) );                          // initialize the solution vector for the dissipated power                                 
+
+        cudaDeviceSynchronize();
+
+        // misc buffers:
+        gpuErrchk( cudaMalloc((void **)&nnz_per_row_d, (N_atom_ + 2) * sizeof(int)) );
 
         // fixed parameters which can be copied from the beginning:
-        gpuErrchk( hipMemcpy(site_layer, site_layer_in.data(), N_ * sizeof(int), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(site_x, site_x_in.data(), N_ * sizeof(double), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(site_y, site_y_in.data(), N_ * sizeof(double), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(site_z, site_z_in.data(), N_ * sizeof(double), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(site_element, site_element_in.data(), N_ * sizeof(ELEMENT), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(metal_types, metals.data(), num_metal_types_ * sizeof(ELEMENT), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(sigma, &sigma_in, 1 * sizeof(double), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(k, &k_in, 1 * sizeof(double), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(freq, &freq_in, 1 * sizeof(double), hipMemcpyHostToDevice) );
-        gpuErrchk( hipMemcpy(lattice, lattice_in.data(), 3 * sizeof(double), hipMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(site_layer, site_layer_in.data(), N_ * sizeof(int), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(site_x, site_x_in.data(), N_ * sizeof(double), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(site_y, site_y_in.data(), N_ * sizeof(double), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(site_z, site_z_in.data(), N_ * sizeof(double), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(metal_types, metals.data(), num_metal_types_ * sizeof(ELEMENT), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(sigma, &sigma_in, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(k, &k_in, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(freq, &freq_in, 1 * sizeof(double), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(lattice, lattice_in.data(), 3 * sizeof(double), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(neigh_idx, neigh_idx_in.data(), N_ * nn_ * sizeof(int), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(cutoff_window, cutoff_window_in.data(), N_ * 2 * sizeof(int), cudaMemcpyHostToDevice) );
+        gpuErrchk( cudaMemcpy(cutoff_idx, cutoff_idx_in.data(), N_ * N_cutoff_ * sizeof(int), cudaMemcpyHostToDevice) );
+    
+        cudaDeviceSynchronize();
+        
+#endif
+
     }
+
+    // ~GPUBuffers() {
+    //     delete[] count_sites;
+    //     delete[] displ_sites;
+    // }
 
     void freeGPUmemory();
 
