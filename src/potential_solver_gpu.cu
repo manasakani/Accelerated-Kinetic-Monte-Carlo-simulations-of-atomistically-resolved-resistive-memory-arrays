@@ -982,12 +982,12 @@ void background_potential_gpu_sparse(cublasHandle_t handle_cublas, cusolverDnHan
             );
     }
 
-    // // DEBUG
-    // // dump A into a text file:
+    // DEBUG
+    // dump A into a text file:
     // dump_csr_matrix_txt(N_interface, A_distributed->nnz, A_distributed->row_ptr_d[0],  A_distributed->col_indices_d[0], A_distributed->data_d[0], 0);
     // std::cout << "dumped csr matrix\n";
     // exit(1);
-    // // DEBUG
+    // DEBUG
 
     // copy back and print gpubuf.left_row_ptr_d
     // int *left_row_ptr_h = (int *)calloc(rows_this_rank + 1, sizeof(int));

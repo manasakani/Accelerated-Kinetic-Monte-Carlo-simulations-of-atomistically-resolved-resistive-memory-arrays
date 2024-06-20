@@ -11,6 +11,7 @@ def read_xyz(filename):
     atoms = []
     coords = []
     potential = []
+    power = []
     temperature = []
     lattice = []
 
@@ -29,18 +30,25 @@ def read_xyz(filename):
                 coords.append(line.split()[1:3])
                 potential.append(line.split()[4])
                 temperature.append(line.split()[5])
+            elif len(line.split()) == 7:
+                atoms.append(line.split()[0])
+                coords.append(line.split()[1:3])
+                potential.append(line.split()[4])
+                power.append(line.split()[5])
+                temperature.append(line.split()[6])
             else:
                 pass
 
     coords = np.asarray(coords, dtype=np.float64)
     potential = np.asarray(potential, dtype=np.float64)
+    power = np.asarray(power, dtype=np.float64)
     temperature = np.asarray(temperature, dtype=np.float64)
     lattice = np.asarray(lattice, dtype=np.float64)
 
-    return np.array(atoms), coords, potential, temperature
+    return np.array(atoms), coords, potential, power, temperature
 
 # makes a scatter plot of the device atomic structure, highlighting vacancies and ions
-def make_image(names, positions, potential, temperature, structure_folder, imname):
+def make_image(names, positions, potential, power, temperature, structure_folder, imname):
 
     x = [pos[0] for pos in positions]
     y = [pos[1] for pos in positions]
@@ -64,27 +72,50 @@ def make_image(names, positions, potential, temperature, structure_folder, imnam
             colors.append((r, g, b, 0.0))
 
     reversed = False
-    #fig = plt.figure()
-    fig = plt.figure(figsize=(5, 6), tight_layout=True)
+    # fig = plt.figure()
+    fig = plt.figure(figsize=(5, 7), tight_layout=True)
 
-    ax = fig.add_subplot(3, 1, 1)
-    ax.scatter(x, y, c=colors, s=0.5)
-    ax.grid(False)
-    ax.get_xaxis().set_ticks([])
+    if len(power) > 0:
+        ax = fig.add_subplot(4, 1, 1)
+        ax.scatter(x, y, c=colors, s=0.5)
+        ax.grid(False)
+        ax.get_xaxis().set_ticks([])
 
-    ax = fig.add_subplot(3, 1, 2)
-    ax.grid(True)
-    ax.scatter(x, potential, c=y, s=2, alpha=0.5, cmap='coolwarm')
-    # ax.set_ylim(ymin=np.min(potential)-2, ymax = np.max(potential)+2)
-    ax.set_xlabel("x position(s) (A)")
-    ax.set_ylabel("Potential (V)")
-    
-    ax = fig.add_subplot(3, 1, 3)
-    ax.grid(True)
-    ax.scatter(x, temperature, c=y, s=2, alpha=0.5, cmap='coolwarm')
-    ax.set_xlabel("x position(s) (A)")
-    # ax.set_yscale('log')  # Set the right y-axis to log scale
-    ax.set_ylabel("Dissipated Power (K)")
+        ax = fig.add_subplot(4, 1, 2)
+        ax.grid(True)
+        ax.scatter(x, potential, c=y, s=2, alpha=0.5, cmap='coolwarm')
+        ax.set_xlabel("x position(s) (A)")
+        ax.set_ylabel("V (V)")
+        
+        ax = fig.add_subplot(4, 1, 3)
+        ax.grid(True)
+        ax.scatter(x, power, c=y, s=2, alpha=0.5, cmap='coolwarm')
+        ax.set_xlabel("x position(s) (A)")
+        ax.set_ylabel("Disp. Power * 1e10 (W)")
+
+        ax = fig.add_subplot(4, 1, 4)
+        ax.grid(True)
+        ax.scatter(x, temperature, c=y, s=2, alpha=0.5, cmap='coolwarm')
+        ax.set_xlabel("x position(s) (A)")
+        ax.set_ylabel("T (K)")
+    else:
+        ax = fig.add_subplot(3, 1, 1)
+        ax.scatter(x, y, c=colors, s=0.5)
+        ax.grid(False)
+        ax.get_xaxis().set_ticks([])
+
+        ax = fig.add_subplot(3, 1, 2)
+        ax.grid(True)
+        ax.scatter(x, potential, c=y, s=2, alpha=0.5, cmap='coolwarm')
+        ax.set_xlabel("x position(s) (A)")
+        ax.set_ylabel("V (V)")
+        
+        ax = fig.add_subplot(3, 1, 3)
+        ax.grid(True)
+        ax.scatter(x, temperature, c=y, s=2, alpha=0.5, cmap='coolwarm')
+        ax.set_xlabel("x position(s) (A)")
+        ax.set_ylabel("T (K)")
+
 
     plt.savefig(structure_folder+'/'+imname)
 
@@ -105,8 +136,8 @@ def main():
           
             if not os.path.isfile(structure_folder+'/'+imname):
                 structure_file = structure_folder + '/' + structure_xyz
-                names, coords, potential, temperature = read_xyz(structure_file)
-                make_image(names, coords, potential, temperature, structure_folder, imname)
+                names, coords, potential, power, temperature = read_xyz(structure_file)
+                make_image(names, coords, potential, power, temperature, structure_folder, imname)
                 print("Made device image for " + structure_folder + "/" + imname)
 
 
