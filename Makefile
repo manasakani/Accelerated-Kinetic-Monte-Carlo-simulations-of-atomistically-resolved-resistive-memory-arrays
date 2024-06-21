@@ -14,9 +14,25 @@
 # LDFLAGS = -L"${MPICH_DIR}/lib" -lmpi
 # ***************************************************
 
-# USE TO COMPILE GPU CODE ON ATTELAS, remember to make clean when switching
+# # USE TO COMPILE GPU CODE ON ATTELAS, remember to make clean when switching
+# # ***************************************************
+# # *** IIS - GNU C++ compiler (with C++17) + nvcc *** 
+#   CXX = /usr/sepp/bin/g++ 
+#   MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/mkl
+#   OMPROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/compiler/lib/intel64_lin
+#   CUDA_ROOT = /usr/local/cuda
+#   CXXFLAGS = -std=c++17 -O2 -m64 -DMKL_ILP64 -I${CUDA_ROOT}/include -I"${MKLROOT}/include" -fopenmp -lpthread -lm -ldl
+#   CXXFLAGS += -I"${MPICH_DIR}/include"
+#   NVCC = nvcc
+#   NVCCFLAGS = -O2 -std=c++17 -arch=sm_60 -ccbin "/usr/sepp/bin/g++" --extended-lambda #-G -lineinfo # Last two are for the visual profiler # To use visual profiler: nvprof --export-profile profile.nvvp ./bin/runKMC parameters.txt 
+#   NVCCFLAGS += -I"${MPICH_DIR}/include" 
+#   LDFLAGS = -L"${CUDA_ROOT}/lib64" -L"${MPICH_DIR}/lib" -lcuda -lcudart -lcublas -lcusolver -lcusparse -lmpi
+#   CXXFLAGS += -DUSE_CUDA 
+#   COMPILE_WITH_CUDA = -DCUDA 
 # ***************************************************
-# *** IIS - GNU C++ compiler (with C++17) + nvcc *** 
+
+# SCAE
+# ***************************************************
   CXX = /usr/sepp/bin/g++ 
   MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/mkl
   OMPROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/compiler/lib/intel64_lin
@@ -24,12 +40,13 @@
   CXXFLAGS = -std=c++17 -O2 -m64 -DMKL_ILP64 -I${CUDA_ROOT}/include -I"${MKLROOT}/include" -fopenmp -lpthread -lm -ldl
   CXXFLAGS += -I"${MPICH_DIR}/include"
   NVCC = nvcc
-  NVCCFLAGS = -O2 -std=c++17 -arch=sm_60 -ccbin "/usr/sepp/bin/g++" --extended-lambda #-G -lineinfo # Last two are for the visual profiler # To use visual profiler: nvprof --export-profile profile.nvvp ./bin/runKMC parameters.txt 
+  NVCCFLAGS = -O2 -std=c++17 -arch=sm_60 #--extended-lambda #-G -lineinfo # Last two are for the visual profiler # To use visual profiler: nvprof --export-profile profile.nvvp ./bin/runKMC parameters.txt 
   NVCCFLAGS += -I"${MPICH_DIR}/include" 
   LDFLAGS = -L"${CUDA_ROOT}/lib64" -L"${MPICH_DIR}/lib" -lcuda -lcudart -lcublas -lcusolver -lcusparse -lmpi
   CXXFLAGS += -DUSE_CUDA 
   COMPILE_WITH_CUDA = -DCUDA 
 # ***************************************************
+
 
 # ***************************************************
 # *** IIS - MPI GNU C++ compiler (with C++17) + nvcc for CUDA+MPI support *** 
@@ -50,12 +67,9 @@
 # ***************************************************
 # *** Piz Daint *** 
 # NVCC = nvcc
-
 # CUDA_DIR = /opt/nvidia/hpc_sdk/Linux_x86_64/21.5/math_libs/11.3
-
 # CXXFLAGS =-O3 -std=c++14 -I$(OMPROOT) -I"${CUDA_HOME}/include" -I"${CUDA_DIR}/include" -I"${MKLROOT}/include" -L${MKLROOT}/lib/intel64 -I"${MPICH_DIR}/include"
 # CXXFLAGS += -Wl,--no-as-needed -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core -lgomp -lpthread -lm -ldl -fopenmp
-
 # NVCCFLAGS = -O3 -arch=sm_60 -Xcompiler -Wall -Xcompiler -Wextra -Xcompiler -std=c++14 -Xcompiler -fopenmp
 # NVCCFLAGS += -I"${CUDA_HOME}/include" -I"${CUDA_DIR}/include" -I"${MPICH_DIR}/include"
 # LDFLAGS = -L"${MPICH_DIR}/lib"  -L"${CUDA_HOME}/lib64" 
