@@ -1,0 +1,424 @@
+Restarting from reordered_device_10_2thick.xyz
+--------------------------------
+Applied Voltage = 5 V
+--------------------------------
+Created folder: Results_5.000000
+--------------
+KMC step count: 0
+V_vcm: 5
+KMC time is: 1.46913e-14
+Z - calculation time - charge [s]: 1.4246e-05
+Z - calculation time - kmc events [s]: 0.0870045
+Z - calculation time - potential from boundaries [s]: 0.182746
+Z - calculation time - potential from charges [s]: 0.0129878
+Z - calculation time - all fields [s]: 0.598748
+Z - calculation time - logging results [s]: 8.706e-06
+Z - calculation time - KMC superstep [s]: 0.598757
+----------------------------------------------------
+KMC step count: 1
+V_vcm: 5
+KMC time is: 2.9666e-14
+Z - calculation time - charge [s]: 7.077e-06
+Z - calculation time - kmc events [s]: 0.0415208
+Z - calculation time - potential from boundaries [s]: 0.0958087
+Z - calculation time - potential from charges [s]: 0.01298
+Z - calculation time - all fields [s]: 0.150327
+Z - calculation time - logging results [s]: 8.545e-06
+Z - calculation time - KMC superstep [s]: 0.150336
+----------------------------------------------------
+KMC step count: 2
+V_vcm: 5
+KMC time is: 4.05642e-14
+Z - calculation time - charge [s]: 6.865e-06
+Z - calculation time - kmc events [s]: 0.0249695
+Z - calculation time - potential from boundaries [s]: 0.0801043
+Z - calculation time - potential from charges [s]: 0.0129884
+Z - calculation time - all fields [s]: 0.11808
+Z - calculation time - logging results [s]: 7.242e-06
+Z - calculation time - KMC superstep [s]: 0.118087
+----------------------------------------------------
+KMC step count: 3
+V_vcm: 5
+KMC time is: 6.14424e-14
+Z - calculation time - charge [s]: 6.77e-06
+Z - calculation time - kmc events [s]: 0.0166102
+Z - calculation time - potential from boundaries [s]: 0.0807076
+Z - calculation time - potential from charges [s]: 0.0129984
+Z - calculation time - all fields [s]: 0.110333
+Z - calculation time - logging results [s]: 7.499e-06
+Z - calculation time - KMC superstep [s]: 0.110341
+----------------------------------------------------
+KMC step count: 4
+V_vcm: 5
+KMC time is: 7.27672e-14
+Z - calculation time - charge [s]: 6.872e-06
+Z - calculation time - kmc events [s]: 0.017681
+Z - calculation time - potential from boundaries [s]: 0.0794473
+Z - calculation time - potential from charges [s]: 0.0130518
+Z - calculation time - all fields [s]: 0.110197
+Z - calculation time - logging results [s]: 7.857e-06
+Z - calculation time - KMC superstep [s]: 0.110205
+----------------------------------------------------
+KMC step count: 5
+V_vcm: 5
+KMC time is: 8.92118e-14
+Z - calculation time - charge [s]: 6.894e-06
+Z - calculation time - kmc events [s]: 0.00789414
+Z - calculation time - potential from boundaries [s]: 0.0574607
+Z - calculation time - potential from charges [s]: 0.0130638
+Z - calculation time - all fields [s]: 0.0784361
+Z - calculation time - logging results [s]: 7.256e-06
+Z - calculation time - KMC superstep [s]: 0.0784434
+----------------------------------------------------
+KMC step count: 6
+V_vcm: 5
+KMC time is: 1.18334e-13
+Z - calculation time - charge [s]: 6.652e-06
+Z - calculation time - kmc events [s]: 0.00722806
+Z - calculation time - potential from boundaries [s]: 0.0803559
+Z - calculation time - potential from charges [s]: 0.0130424
+Z - calculation time - all fields [s]: 0.100643
+Z - calculation time - logging results [s]: 7.24e-06
+Z - calculation time - KMC superstep [s]: 0.100651
+----------------------------------------------------
+KMC step count: 7
+V_vcm: 5
+KMC time is: 1.28535e-13
+Z - calculation time - charge [s]: 6.635e-06
+Z - calculation time - kmc events [s]: 0.0047679
+Z - calculation time - potential from boundaries [s]: 0.0150674
+Z - calculation time - potential from charges [s]: 0.0130438
+Z - calculation time - all fields [s]: 0.0328961
+Z - calculation time - logging results [s]: 7.521e-06
+Z - calculation time - KMC superstep [s]: 0.0329036
+----------------------------------------------------
+KMC step count: 8
+V_vcm: 5
+KMC time is: 1.39915e-13
+Z - calculation time - charge [s]: 6.983e-06
+Z - calculation time - kmc events [s]: 0.00580102
+Z - calculation time - potential from boundaries [s]: 0.0072738
+Z - calculation time - potential from charges [s]: 0.0130525
+Z - calculation time - all fields [s]: 0.0261449
+Z - calculation time - logging results [s]: 7.799e-06
+Z - calculation time - KMC superstep [s]: 0.0261527
+----------------------------------------------------
+KMC step count: 9
+V_vcm: 5
+KMC time is: 1.5007e-13
+Z - calculation time - charge [s]: 6.863e-06
+Z - calculation time - kmc events [s]: 0.00511316
+Z - calculation time - potential from boundaries [s]: 0.013305
+Z - calculation time - potential from charges [s]: 0.0130496
+Z - calculation time - all fields [s]: 0.0314849
+Z - calculation time - logging results [s]: 7.607e-06
+Z - calculation time - KMC superstep [s]: 0.0314925
+----------------------------------------------------
+KMC step count: 10
+V_vcm: 5
+KMC time is: 1.61819e-13
+Z - calculation time - charge [s]: 7.005e-06
+Z - calculation time - kmc events [s]: 0.00511313
+Z - calculation time - potential from boundaries [s]: 0.00726012
+Z - calculation time - potential from charges [s]: 0.0130579
+Z - calculation time - all fields [s]: 0.0254488
+Z - calculation time - logging results [s]: 7.395e-06
+Z - calculation time - KMC superstep [s]: 0.0254563
+----------------------------------------------------
+KMC step count: 11
+V_vcm: 5
+KMC time is: 1.97598e-13
+Z - calculation time - charge [s]: 6.888e-06
+Z - calculation time - kmc events [s]: 0.00484602
+Z - calculation time - potential from boundaries [s]: 0.0556785
+Z - calculation time - potential from charges [s]: 0.0130646
+Z - calculation time - all fields [s]: 0.073607
+Z - calculation time - logging results [s]: 7.596e-06
+Z - calculation time - KMC superstep [s]: 0.0736147
+----------------------------------------------------
+KMC step count: 12
+V_vcm: 5
+KMC time is: 2.07916e-13
+Z - calculation time - charge [s]: 6.832e-06
+Z - calculation time - kmc events [s]: 0.00442757
+Z - calculation time - potential from boundaries [s]: 0.0645173
+Z - calculation time - potential from charges [s]: 0.013061
+Z - calculation time - all fields [s]: 0.082023
+Z - calculation time - logging results [s]: 7.287e-06
+Z - calculation time - KMC superstep [s]: 0.0820304
+----------------------------------------------------
+KMC step count: 13
+V_vcm: 5
+KMC time is: 2.21092e-13
+Z - calculation time - charge [s]: 6.706e-06
+Z - calculation time - kmc events [s]: 0.00440294
+Z - calculation time - potential from boundaries [s]: 0.00727855
+Z - calculation time - potential from charges [s]: 0.0130724
+Z - calculation time - all fields [s]: 0.0247708
+Z - calculation time - logging results [s]: 7.152e-06
+Z - calculation time - KMC superstep [s]: 0.024778
+----------------------------------------------------
+KMC step count: 14
+V_vcm: 5
+KMC time is: 2.54931e-13
+Z - calculation time - charge [s]: 6.95e-06
+Z - calculation time - kmc events [s]: 0.00512241
+Z - calculation time - potential from boundaries [s]: 0.0115056
+Z - calculation time - potential from charges [s]: 0.0130628
+Z - calculation time - all fields [s]: 0.029708
+Z - calculation time - logging results [s]: 7.655e-06
+Z - calculation time - KMC superstep [s]: 0.0297157
+----------------------------------------------------
+KMC step count: 15
+V_vcm: 5
+KMC time is: 3.26794e-13
+Z - calculation time - charge [s]: 6.993e-06
+Z - calculation time - kmc events [s]: 0.00547802
+Z - calculation time - potential from boundaries [s]: 0.00725687
+Z - calculation time - potential from charges [s]: 0.0130852
+Z - calculation time - all fields [s]: 0.0258376
+Z - calculation time - logging results [s]: 7.202e-06
+Z - calculation time - KMC superstep [s]: 0.0258448
+----------------------------------------------------
+KMC step count: 16
+V_vcm: 5
+KMC time is: 3.38433e-13
+Z - calculation time - charge [s]: 6.607e-06
+Z - calculation time - kmc events [s]: 0.00515119
+Z - calculation time - potential from boundaries [s]: 0.00726591
+Z - calculation time - potential from charges [s]: 0.0130803
+Z - calculation time - all fields [s]: 0.0255144
+Z - calculation time - logging results [s]: 7.55e-06
+Z - calculation time - KMC superstep [s]: 0.0255221
+----------------------------------------------------
+KMC step count: 17
+V_vcm: 5
+KMC time is: 3.54195e-13
+Z - calculation time - charge [s]: 6.943e-06
+Z - calculation time - kmc events [s]: 0.00475926
+Z - calculation time - potential from boundaries [s]: 0.00727349
+Z - calculation time - potential from charges [s]: 0.0130607
+Z - calculation time - all fields [s]: 0.0251109
+Z - calculation time - logging results [s]: 0.000481832
+Z - calculation time - KMC superstep [s]: 0.0255928
+----------------------------------------------------
+KMC step count: 18
+V_vcm: 5
+KMC time is: 3.68291e-13
+Z - calculation time - charge [s]: 9.946e-06
+Z - calculation time - kmc events [s]: 0.00479963
+Z - calculation time - potential from boundaries [s]: 0.00679133
+Z - calculation time - potential from charges [s]: 0.0130867
+Z - calculation time - all fields [s]: 0.0246983
+Z - calculation time - logging results [s]: 7.209e-06
+Z - calculation time - KMC superstep [s]: 0.0247055
+----------------------------------------------------
+KMC step count: 19
+V_vcm: 5
+KMC time is: 4.31784e-13
+Z - calculation time - charge [s]: 6.88e-06
+Z - calculation time - kmc events [s]: 0.00581621
+Z - calculation time - potential from boundaries [s]: 0.00725583
+Z - calculation time - potential from charges [s]: 0.0130399
+Z - calculation time - all fields [s]: 0.0261293
+Z - calculation time - logging results [s]: 7.502e-06
+Z - calculation time - KMC superstep [s]: 0.0261368
+----------------------------------------------------
+KMC step count: 20
+V_vcm: 5
+KMC time is: 4.63399e-13
+Z - calculation time - charge [s]: 7.058e-06
+Z - calculation time - kmc events [s]: 0.00547252
+Z - calculation time - potential from boundaries [s]: 0.00726935
+Z - calculation time - potential from charges [s]: 0.0130403
+Z - calculation time - all fields [s]: 0.0257997
+Z - calculation time - logging results [s]: 6.988e-06
+Z - calculation time - KMC superstep [s]: 0.0258067
+----------------------------------------------------
+KMC step count: 21
+V_vcm: 5
+KMC time is: 4.86936e-13
+Z - calculation time - charge [s]: 6.71e-06
+Z - calculation time - kmc events [s]: 0.00551089
+Z - calculation time - potential from boundaries [s]: 0.00732485
+Z - calculation time - potential from charges [s]: 0.0130837
+Z - calculation time - all fields [s]: 0.0259365
+Z - calculation time - logging results [s]: 7.759e-06
+Z - calculation time - KMC superstep [s]: 0.0259443
+----------------------------------------------------
+KMC step count: 22
+V_vcm: 5
+KMC time is: 5.2592e-13
+Z - calculation time - charge [s]: 6.896e-06
+Z - calculation time - kmc events [s]: 0.00475774
+Z - calculation time - potential from boundaries [s]: 0.0125987
+Z - calculation time - potential from charges [s]: 0.0130979
+Z - calculation time - all fields [s]: 0.0304718
+Z - calculation time - logging results [s]: 7.223e-06
+Z - calculation time - KMC superstep [s]: 0.030479
+----------------------------------------------------
+KMC step count: 23
+V_vcm: 5
+KMC time is: 5.62653e-13
+Z - calculation time - charge [s]: 6.705e-06
+Z - calculation time - kmc events [s]: 0.0054992
+Z - calculation time - potential from boundaries [s]: 0.00726522
+Z - calculation time - potential from charges [s]: 0.013047
+Z - calculation time - all fields [s]: 0.0258285
+Z - calculation time - logging results [s]: 7.677e-06
+Z - calculation time - KMC superstep [s]: 0.0258362
+----------------------------------------------------
+KMC step count: 24
+V_vcm: 5
+KMC time is: 5.73539e-13
+Z - calculation time - charge [s]: 6.922e-06
+Z - calculation time - kmc events [s]: 0.00441274
+Z - calculation time - potential from boundaries [s]: 0.00727218
+Z - calculation time - potential from charges [s]: 0.0130358
+Z - calculation time - all fields [s]: 0.0247381
+Z - calculation time - logging results [s]: 7.495e-06
+Z - calculation time - KMC superstep [s]: 0.0247456
+----------------------------------------------------
+KMC step count: 25
+V_vcm: 5
+KMC time is: 6.45167e-13
+Z - calculation time - charge [s]: 6.916e-06
+Z - calculation time - kmc events [s]: 0.00510983
+Z - calculation time - potential from boundaries [s]: 0.00726017
+Z - calculation time - potential from charges [s]: 0.0130622
+Z - calculation time - all fields [s]: 0.0254496
+Z - calculation time - logging results [s]: 7.242e-06
+Z - calculation time - KMC superstep [s]: 0.0254569
+----------------------------------------------------
+KMC step count: 26
+V_vcm: 5
+KMC time is: 7.5314e-13
+Z - calculation time - charge [s]: 6.827e-06
+Z - calculation time - kmc events [s]: 0.00688721
+Z - calculation time - potential from boundaries [s]: 0.0315196
+Z - calculation time - potential from charges [s]: 0.0130886
+Z - calculation time - all fields [s]: 0.0515125
+Z - calculation time - logging results [s]: 7.233e-06
+Z - calculation time - KMC superstep [s]: 0.0515198
+----------------------------------------------------
+KMC step count: 27
+V_vcm: 5
+KMC time is: 7.67104e-13
+Z - calculation time - charge [s]: 6.732e-06
+Z - calculation time - kmc events [s]: 0.00687783
+Z - calculation time - potential from boundaries [s]: 0.0072675
+Z - calculation time - potential from charges [s]: 0.0130596
+Z - calculation time - all fields [s]: 0.0272222
+Z - calculation time - logging results [s]: 7.453e-06
+Z - calculation time - KMC superstep [s]: 0.0272297
+----------------------------------------------------
+KMC step count: 28
+V_vcm: 5
+KMC time is: 7.80313e-13
+Z - calculation time - charge [s]: 6.917e-06
+Z - calculation time - kmc events [s]: 0.00756364
+Z - calculation time - potential from boundaries [s]: 0.00729151
+Z - calculation time - potential from charges [s]: 0.013051
+Z - calculation time - all fields [s]: 0.0279236
+Z - calculation time - logging results [s]: 7.691e-06
+Z - calculation time - KMC superstep [s]: 0.0279313
+----------------------------------------------------
+KMC step count: 29
+V_vcm: 5
+KMC time is: 7.92605e-13
+Z - calculation time - charge [s]: 6.96e-06
+Z - calculation time - kmc events [s]: 0.00581517
+Z - calculation time - potential from boundaries [s]: 0.00732738
+Z - calculation time - potential from charges [s]: 0.0130768
+Z - calculation time - all fields [s]: 0.0262369
+Z - calculation time - logging results [s]: 7.719e-06
+Z - calculation time - KMC superstep [s]: 0.0262446
+----------------------------------------------------
+KMC step count: 30
+V_vcm: 5
+KMC time is: 8.27939e-13
+Z - calculation time - charge [s]: 6.812e-06
+Z - calculation time - kmc events [s]: 0.00685733
+Z - calculation time - potential from boundaries [s]: 0.00726498
+Z - calculation time - potential from charges [s]: 0.0130723
+Z - calculation time - all fields [s]: 0.0272117
+Z - calculation time - logging results [s]: 7.28e-06
+Z - calculation time - KMC superstep [s]: 0.027219
+----------------------------------------------------
+KMC step count: 31
+V_vcm: 5
+KMC time is: 8.53906e-13
+Z - calculation time - charge [s]: 6.749e-06
+Z - calculation time - kmc events [s]: 0.0058173
+Z - calculation time - potential from boundaries [s]: 0.036837
+Z - calculation time - potential from charges [s]: 0.013091
+Z - calculation time - all fields [s]: 0.0557624
+Z - calculation time - logging results [s]: 7.125e-06
+Z - calculation time - KMC superstep [s]: 0.0557695
+----------------------------------------------------
+KMC step count: 32
+V_vcm: 5
+KMC time is: 8.64998e-13
+Z - calculation time - charge [s]: 6.657e-06
+Z - calculation time - kmc events [s]: 0.00440968
+Z - calculation time - potential from boundaries [s]: 0.0581557
+Z - calculation time - potential from charges [s]: 0.0130973
+Z - calculation time - all fields [s]: 0.0756796
+Z - calculation time - logging results [s]: 7.392e-06
+Z - calculation time - KMC superstep [s]: 0.075687
+----------------------------------------------------
+KMC step count: 33
+V_vcm: 5
+KMC time is: 8.92223e-13
+Z - calculation time - charge [s]: 6.844e-06
+Z - calculation time - kmc events [s]: 0.00447541
+Z - calculation time - potential from boundaries [s]: 0.00727832
+Z - calculation time - potential from charges [s]: 0.013059
+Z - calculation time - all fields [s]: 0.0248303
+Z - calculation time - logging results [s]: 7.798e-06
+Z - calculation time - KMC superstep [s]: 0.0248382
+----------------------------------------------------
+KMC step count: 34
+V_vcm: 5
+KMC time is: 9.09909e-13
+Z - calculation time - charge [s]: 7.199e-06
+Z - calculation time - kmc events [s]: 0.00511702
+Z - calculation time - potential from boundaries [s]: 0.00725438
+Z - calculation time - potential from charges [s]: 0.0130798
+Z - calculation time - all fields [s]: 0.025469
+Z - calculation time - logging results [s]: 7.575e-06
+Z - calculation time - KMC superstep [s]: 0.0254766
+----------------------------------------------------
+KMC step count: 35
+V_vcm: 5
+KMC time is: 9.30418e-13
+Z - calculation time - charge [s]: 6.958e-06
+Z - calculation time - kmc events [s]: 0.00510642
+Z - calculation time - potential from boundaries [s]: 0.0577268
+Z - calculation time - potential from charges [s]: 0.0130756
+Z - calculation time - all fields [s]: 0.0759264
+Z - calculation time - logging results [s]: 4.3079e-05
+Z - calculation time - KMC superstep [s]: 0.0759695
+----------------------------------------------------
+KMC step count: 36
+V_vcm: 5
+KMC time is: 9.57162e-13
+Z - calculation time - charge [s]: 8.098e-06
+Z - calculation time - kmc events [s]: 0.00476938
+Z - calculation time - potential from boundaries [s]: 0.0319792
+Z - calculation time - potential from charges [s]: 0.0130941
+Z - calculation time - all fields [s]: 0.0498614
+Z - calculation time - logging results [s]: 7.242e-06
+Z - calculation time - KMC superstep [s]: 0.0498687
+----------------------------------------------------
+KMC step count: 37
+V_vcm: 5
+KMC time is: 1e-12
+Z - calculation time - charge [s]: 6.799e-06
+Z - calculation time - kmc events [s]: 0.00477723
+Z - calculation time - potential from boundaries [s]: 0.00730328
+Z - calculation time - potential from charges [s]: 0.0130864
+Z - calculation time - all fields [s]: 0.0251842
+Z - calculation time - logging results [s]: 7.844e-06
+Z - calculation time - KMC superstep [s]: 0.0251921
+--------------------------------------

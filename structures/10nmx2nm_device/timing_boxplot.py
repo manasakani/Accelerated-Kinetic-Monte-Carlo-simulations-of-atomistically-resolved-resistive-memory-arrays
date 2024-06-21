@@ -14,13 +14,6 @@ timing_data = {
     "Z - calculation time - kmc events [s]": [],
     "Z - calculation time - KMC superstep [s]": [],
 }
-# timing_data = {
-#     "KMC step count": [],
-#     "Z - calculation time - dissipated power [s]": [],
-#     "Z - calculation time - potential from boundaries [s]": [],
-#     "Z - calculation time - kmc events [s]": [],
-#     "Z - calculation time - KMC superstep [s]": [],
-# }
 
 # Read the log file and extract timing information
 with open("output1_0.txt", "r") as file:

@@ -116,8 +116,49 @@ def make_image(names, positions, potential, power, temperature, structure_folder
         ax.set_xlabel("x position(s) (A)")
         ax.set_ylabel("T (K)")
 
-
     plt.savefig(structure_folder+'/'+imname)
+
+
+# makes a scatter plot of the device atomic structure, highlighting vacancies and ions
+def make_image_show(names, positions, potential, power, temperature):
+
+    x = [pos[0] for pos in positions]
+    y = [pos[1] for pos in positions]
+    
+    colors = []
+    for ind, element in enumerate(names):
+        if element == 'V' or ind == 0:
+            r, g, b = to_rgb('red')
+            colors.append((r, g, b, 0.8))
+        elif element == 'Od' or ind == len(names)-1:
+            r, g, b = to_rgb('blue')
+            colors.append((r, g, b, 0.8))
+        elif element in ['Ti', 'N', 'Hf', 'O']:
+            r, g, b = to_rgb('gray')
+            colors.append((r, g, b, 0.1))
+        elif element in ['d']:
+            r, g, b = to_rgb('gray')
+            colors.append((r, g, b, 0.05))
+        else:
+            r, g, b = to_rgb('gray')
+            colors.append((r, g, b, 0.0))
+
+    reversed = False
+    # fig = plt.figure()
+    fig = plt.figure(figsize=(5, 7), tight_layout=True)
+
+    if len(power) > 0:
+        ax = fig.add_subplot(4, 1, 1)
+        ax.scatter(x, y, c=colors, s=0.5)
+        ax.grid(False)
+        ax.get_xaxis().set_ticks([])
+    else:
+        ax = fig.add_subplot(3, 1, 1)
+        ax.scatter(x, y, c=colors, s=0.5)
+        ax.grid(False)
+        ax.get_xaxis().set_ticks([])
+
+    plt.show()
 
 
 # iterates over input directories and makes all the images

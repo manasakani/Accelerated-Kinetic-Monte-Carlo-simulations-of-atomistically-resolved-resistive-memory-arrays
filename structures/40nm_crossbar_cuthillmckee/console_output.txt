@@ -1,0 +1,2 @@
+Will use this GPU: Tesla P100-PCIE-16GB
+Number of OMP threads: 28
