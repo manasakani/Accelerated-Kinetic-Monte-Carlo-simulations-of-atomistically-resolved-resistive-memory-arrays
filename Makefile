@@ -33,7 +33,7 @@
 
 # SCAE
 # ***************************************************
-  CXX = gcc  
+  CXX = g++  
   MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/mkl
   OMPROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/compiler/lib/intel64_lin
   CUDA_ROOT = /usr/local/cuda
