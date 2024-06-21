@@ -38,10 +38,10 @@
   OMPROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/compiler/lib/intel64_lin
   CUDA_ROOT = /usr/local/cuda
   CXXFLAGS = -std=c++17 -O2 -m64 -DMKL_ILP64 -I${CUDA_ROOT}/include -I"${MKLROOT}/include" -fopenmp -lpthread -lm -ldl
-  CXXFLAGS += -I"/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
+  CXXFLAGS += -I"/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi" -I"/usr/lib/x86_64-linux-gnu/openmpi/include"
   NVCC = nvcc
   NVCCFLAGS = -O2 -std=c++17 -arch=sm_60 #--extended-lambda #-G -lineinfo # Last two are for the visual profiler # To use visual profiler: nvprof --export-profile profile.nvvp ./bin/runKMC parameters.txt 
-  NVCCFLAGS += -I"/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
+  NVCCFLAGS += -I"/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi" -I"/usr/lib/x86_64-linux-gnu/openmpi/include"
   LDFLAGS = -L"${CUDA_ROOT}/lib64" -L"/usr/lib/x86_64-linux-gnu/openmpi/lib" -lcuda -lcudart -lcublas -lcusolver -lcusparse -lmpi
   CXXFLAGS += -DUSE_CUDA 
   COMPILE_WITH_CUDA = -DCUDA 
