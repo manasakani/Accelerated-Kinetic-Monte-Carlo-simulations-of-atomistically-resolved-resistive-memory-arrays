@@ -1,4 +1,4 @@
-NVCC = nvcc
+NVCC = /usr/local/cuda/bin/nvcc
 CC = g++
 
 CUDA_HOME = /usr/local/cuda
