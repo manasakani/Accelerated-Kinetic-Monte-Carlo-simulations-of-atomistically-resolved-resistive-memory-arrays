@@ -3,10 +3,10 @@ CC = g++
 
 CUDA_HOME = /usr/local/cuda
 
-CCFLAGS = -O3 -g -Wall -Wextra -fopenmp -std=c++14 -I"${CUDA_HOME}/include" 
+CCFLAGS = -O3 -g -Wall -Wextra -fopenmp -std=c++17 -I"${CUDA_HOME}/include" 
 CCFLAGS += -I"/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi" -I"/usr/lib/x86_64-linux-gnu/openmpi/include"
 
-NVCCFLAGS = -O3 -arch=sm_60 -Xcompiler -Wall -Xcompiler -Wextra -Xcompiler -std=c++14 -Xcompiler -fopenmp -I"${CUDA_HOME}/include" 
+NVCCFLAGS = -O3 -arch=sm_60 -Xcompiler -Wall -Xcompiler -Wextra -Xcompiler -std=c++17 -Xcompiler -fopenmp -I"${CUDA_HOME}/include" 
 LDFLAGS = -L"${MPICH_DIR}/lib" -L"${CUDA_HOME}/lib64" 
 LDFLAGS += -L"/usr/lib/x86_64-linux-gnu/openmpi/lib"
 LDLIBS = -Wl,--copy-dt-needed-entries -lcuda -lcudart -lcublas -lcusolver -lcusparse -lm -lmpi -lmpi_cxx
