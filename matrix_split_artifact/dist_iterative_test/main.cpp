@@ -726,15 +726,15 @@ int main(int argc, char **argv) {
     delete[] dense_subblock_data;
     delete[] diag;
 
-    // std::string path_solve_tot = get_filename(save_path, "non_split", size, rank);
-    // std::string path_solve_split_sparse1 = get_filename(save_path, "split", size, rank);
+    std::string path_solve_tot = get_filename(save_path, "non_split", size, rank);
+    std::string path_solve_split_sparse1 = get_filename(save_path, "split", size, rank);
 
-    // save_measurements(path_solve_tot,
-    //     time_tot + start_up_measurements,
-    //     true_number_of_measurements, true);
-    // save_measurements(path_solve_split_sparse1,
-    //     time_split_sparse1 + start_up_measurements,
-    //     true_number_of_measurements, true);
+    save_measurements(path_solve_tot,
+        time_tot + start_up_measurements,
+        true_number_of_measurements, true);
+    save_measurements(path_solve_split_sparse1,
+        time_split_sparse1 + start_up_measurements,
+        true_number_of_measurements, true);
 
     MPI_Finalize();
     return 0;
