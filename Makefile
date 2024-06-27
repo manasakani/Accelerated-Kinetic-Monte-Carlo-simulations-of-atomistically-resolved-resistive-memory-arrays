@@ -40,7 +40,7 @@
   CXXFLAGS = -std=c++17 -O2 -m64 -DMKL_ILP64 -I${CUDA_ROOT}/include -I"${MKLROOT}/include" -fopenmp -lpthread -lm -ldl
   CXXFLAGS += -I"/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi" -I"/usr/lib/x86_64-linux-gnu/openmpi/include"
   NVCC = nvcc
-  NVCCFLAGS = -O2 -std=c++17 -arch=sm_60 #--extended-lambda #-G -lineinfo # Last two are for the visual profiler # To use visual profiler: nvprof --export-profile profile.nvvp ./bin/runKMC parameters.txt 
+  NVCCFLAGS = -O2 -std=c++17 -arch=${CUDA_ARCH} #--extended-lambda #-G -lineinfo # Last two are for the visual profiler # To use visual profiler: nvprof --export-profile profile.nvvp ./bin/runKMC parameters.txt 
   NVCCFLAGS += -I"/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi" -I"/usr/lib/x86_64-linux-gnu/openmpi/include"
   LDFLAGS = -L"${CUDA_ROOT}/lib64" -L"/usr/lib/x86_64-linux-gnu/openmpi/lib" -lcuda -lcudart -lcublas -lcusolver -lcusparse -lmpi -lmpi_cxx
   CXXFLAGS += -DUSE_CUDA 
